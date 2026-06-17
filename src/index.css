@@ -1,0 +1,107 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Neutral, warm base — mostly grays with one confident flame accent */
+  --background: 30 24% 98%;
+  --foreground: 24 14% 12%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 24 14% 12%;
+
+  --muted: 30 12% 95%;
+  --muted-foreground: 25 8% 44%;
+
+  --border: 28 14% 90%;
+  --input: 28 14% 88%;
+  --ring: 18 90% 52%;
+
+  /* Accent: flame orange — primary actions, focus, highlights */
+  --primary: 18 90% 52%;
+  --primary-foreground: 0 0% 100%;
+
+  /* Ink: deep neutral for hero / headers */
+  --ink: 222 24% 11%;
+  --ink-foreground: 30 24% 97%;
+
+  --success: 152 56% 40%;
+  --warning: 38 92% 50%;
+  --danger: 0 72% 51%;
+
+  --radius: 14px;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: "IBM Plex Sans Thai", Inter, system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+}
+
+/* Tabular numbers for stats / metrics */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-family: Inter, "IBM Plex Sans Thai", sans-serif;
+}
+
+/* Visible, branded focus ring everywhere */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: hsl(var(--primary) / 0.18);
+}
+
+/* Subtle scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 99px;
+  border: 2px solid hsl(var(--background));
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(25 8% 70%);
+}
+
+/* Style native date/file controls to fit the system */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.55;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+.grain {
+  background-image: radial-gradient(hsl(var(--primary) / 0.08) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,5 @@
+employee_id,name,position,department,manager_id
+10001,ปวริศา ทองดี,ผู้อำนวยการฝ่าย,People & Culture,
+10002,ธนกฤต ศรีสุข,ผู้จัดการทีม,People & Culture,10001
+10010,ณัฐวุฒิ พิพัฒน์,เจ้าหน้าที่อาวุโส,People & Culture,10002
+10011,สิริกร วงศ์ไทย,เจ้าหน้าที่,People & Culture,10002

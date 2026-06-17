@@ -1,0 +1,131 @@
+import { useEffect, useState } from "react";
+import { Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { Home as HomeIcon, PenLine, BarChart3, Users, Building2, Download } from "lucide-react";
+import { AuthProvider, useAuth } from "@/lib/auth";
+import { countNewForTeam, DATA_CHANGED_EVENT } from "@/lib/entries";
+import { useSubordinates } from "@/lib/hooks/useTeam";
+import { AppShell, type NavItem } from "@/components/AppShell";
+import Login from "@/pages/Login";
+import Home from "@/pages/Home";
+import LogEntry from "@/pages/LogEntry";
+import Dashboard from "@/pages/Dashboard";
+import Admin from "@/pages/Admin";
+import SuperAdmin from "@/pages/SuperAdmin";
+import Export from "@/pages/Export";
+
+/** จำนวนรายการใหม่/อัปเดตของทีม สำหรับ badge บนเมนู "ข้อมูลทีม" */
+function useNewTeamCount(userId: string | undefined, isLead: boolean): number {
+  const { team } = useSubordinates(isLead ? userId : undefined);
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    if (!userId || !isLead || team.length === 0) {
+      setCount(0);
+      return;
+    }
+    let cancelled = false;
+    const ids = team.map((e) => e.id);
+    const recompute = async () => {
+      try {
+        const n = await countNewForTeam(userId, ids);
+        if (!cancelled) setCount(n);
+      } catch (e) {
+        console.error("useNewTeamCount:", e);
+      }
+    };
+    void recompute();
+    const onChange = () => void recompute();
+    window.addEventListener(DATA_CHANGED_EVENT, onChange);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(DATA_CHANGED_EVENT, onChange);
+    };
+  }, [userId, isLead, team]);
+
+  return count;
+}
+
+function ProtectedLayout() {
+  const { user, isLead, isSuperAdmin, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
+        กำลังโหลด…
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/" replace />;
+
+  const teamNew = useNewTeamCount(user.id, isLead);
+
+  const nav: NavItem[] = [
+    { to: "/app", label: "หน้าแรก", short: "หน้าแรก", icon: HomeIcon },
+    { to: "/app/log", label: "บันทึกข้อมูล", short: "บันทึก", icon: PenLine },
+    { to: "/app/dashboard", label: "Dashboard", short: "Dashboard", icon: BarChart3 },
+    ...(isLead ? [{ to: "/app/admin", label: "ข้อมูลทีม", short: "ทีม", icon: Users, badge: teamNew }] : []),
+    ...(isSuperAdmin
+      ? [
+          { to: "/app/super-admin", label: "โครงสร้างองค์กร", short: "Org", icon: Building2 },
+          { to: "/app/export", label: "Export", short: "Export", icon: Download },
+        ]
+      : []),
+  ];
+
+  return (
+    <AppShell nav={nav}>
+      <Outlet />
+    </AppShell>
+  );
+}
+
+function SuperAdminOnly({ children }: { children: React.ReactNode }) {
+  const { isSuperAdmin } = useAuth();
+  if (!isSuperAdmin) return <Navigate to="/app" replace />;
+  return <>{children}</>;
+}
+
+function LeadOnly({ children }: { children: React.ReactNode }) {
+  const { isLead } = useAuth();
+  if (!isLead) return <Navigate to="/app" replace />;
+  return <>{children}</>;
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route path="/app" element={<ProtectedLayout />}>
+          <Route index element={<Home />} />
+          <Route path="log" element={<LogEntry />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route
+            path="admin"
+            element={
+              <LeadOnly>
+                <Admin />
+              </LeadOnly>
+            }
+          />
+          <Route
+            path="super-admin"
+            element={
+              <SuperAdminOnly>
+                <SuperAdmin />
+              </SuperAdminOnly>
+            }
+          />
+          <Route
+            path="export"
+            element={
+              <SuperAdminOnly>
+                <Export />
+              </SuperAdminOnly>
+            }
+          />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AuthProvider>
+  );
+}
