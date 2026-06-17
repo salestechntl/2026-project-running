@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
-import { Home as HomeIcon, PenLine, BarChart3, Users, Building2, Download, UserCog } from "lucide-react";
+import { Home as HomeIcon, PenLine, BarChart3, Users, Building2, Download } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { countNewForTeam, DATA_CHANGED_EVENT } from "@/lib/entries";
 import { useSubordinates } from "@/lib/hooks/useTeam";
@@ -12,7 +12,6 @@ import Dashboard from "@/pages/Dashboard";
 import Admin from "@/pages/Admin";
 import SuperAdmin from "@/pages/SuperAdmin";
 import Export from "@/pages/Export";
-import EmployeeAdmin from "@/pages/EmployeeAdmin";
 
 /** จำนวนรายการใหม่/อัปเดตของทีม สำหรับ badge บนเมนู "ข้อมูลทีม" */
 function useNewTeamCount(userId: string | undefined, isLead: boolean): number {
@@ -66,7 +65,6 @@ function ProtectedLayout() {
     ...(isLead ? [{ to: "/app/admin", label: "ข้อมูลทีม", short: "ทีม", icon: Users, badge: teamNew }] : []),
     ...(isSuperAdmin
       ? [
-          { to: "/app/employees", label: "จัดการพนักงาน", short: "พนักงาน", icon: UserCog },
           { to: "/app/super-admin", label: "โครงสร้างองค์กร", short: "Org", icon: Building2 },
           { to: "/app/export", label: "Export", short: "Export", icon: Download },
         ]
@@ -107,14 +105,6 @@ export default function App() {
               <LeadOnly>
                 <Admin />
               </LeadOnly>
-            }
-          />
-          <Route
-            path="employees"
-            element={
-              <SuperAdminOnly>
-                <EmployeeAdmin />
-              </SuperAdminOnly>
             }
           />
           <Route
