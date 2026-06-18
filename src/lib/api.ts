@@ -1,4 +1,5 @@
 import type { LoginResponse, MeResponse, OrgImportBatch, OrgImportResponse } from "./auth-types";
+import type { EmployeeRecord } from "./employee-admin";
 import type { RunEntry, WeightEntry, EntryStatus } from "./store";
 import type { Employee } from "./types";
 
@@ -211,4 +212,46 @@ export async function downloadExportCsv(kind: "runs" | "weights"): Promise<strin
   a.remove();
   URL.revokeObjectURL(url);
   return filename;
+}
+
+export async function apiFetchEmployees(): Promise<EmployeeRecord[]> {
+  const res = await fetch("/api/employees", { headers: authHeaders() });
+  if (!res.ok) throw new Error(await parseError(res));
+  const data = (await res.json()) as { employees: EmployeeRecord[] };
+  return data.employees;
+}
+
+export async function apiCreateEmployee(
+  employee: Omit<EmployeeRecord, "createdAt" | "updatedAt">,
+): Promise<EmployeeRecord> {
+  const res = await fetch("/api/employees", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(employee),
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  const data = (await res.json()) as { employee: EmployeeRecord };
+  return data.employee;
+}
+
+export async function apiUpdateEmployee(
+  employeeId: string,
+  patch: Omit<EmployeeRecord, "employeeId" | "createdAt" | "updatedAt">,
+): Promise<EmployeeRecord> {
+  const res = await fetch("/api/employees", {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify({ employeeId, ...patch }),
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  const data = (await res.json()) as { employee: EmployeeRecord };
+  return data.employee;
+}
+
+export async function apiDeleteEmployee(employeeId: string): Promise<void> {
+  const res = await fetch(`/api/employees?employee_id=${encodeURIComponent(employeeId)}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await parseError(res));
 }
