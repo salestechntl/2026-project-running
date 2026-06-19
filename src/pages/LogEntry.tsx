@@ -24,7 +24,7 @@ import {
 } from "@/lib/entries";
 import { useRuns, useWeights } from "@/lib/hooks/useEntries";
 import { pad2, formatThaiDate, formatDurationThai, formatThaiDateTime } from "@/lib/utils";
-import { Button, Card, Field, Input, Select, Badge, ConfirmDialog } from "@/components/ui";
+import { Button, Card, Field, Input, Select, Badge, ConfirmDialog, LoadingBlock } from "@/components/ui";
 import { ImageUpload, ImageUploadMulti } from "@/components/ImageUpload";
 import { DateSelect } from "@/components/DateSelect";
 import { cn } from "@/lib/utils";
@@ -165,7 +165,7 @@ function RunTab() {
   const [formSeed, setFormSeed] = useState(0);
   const [toast, setToast] = useState<string>();
   const historyRef = useRef<HTMLDivElement>(null);
-  const { runs, refresh } = useRuns(user?.id);
+  const { runs, loading: runsLoading, refresh } = useRuns(user?.id);
 
   if (!user) return null;
 
@@ -197,6 +197,7 @@ function RunTab() {
       <RunHistory
         ref={historyRef}
         runs={runs}
+        loading={runsLoading}
         onEdit={(r) => setEditing(r)}
         onDeleted={() => void refresh()}
       />
@@ -440,10 +441,12 @@ function RunForm({
 const RunHistory = forwardRef(function RunHistory(
   {
     runs,
+    loading,
     onEdit,
     onDeleted,
   }: {
     runs: RunEntry[];
+    loading?: boolean;
     onEdit: (r: RunEntry) => void;
     onDeleted: () => void;
   },
@@ -451,6 +454,18 @@ const RunHistory = forwardRef(function RunHistory(
 ) {
   const { isLead } = useAuth();
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  if (loading) {
+    return (
+      <div ref={ref} className="scroll-mt-6 animate-fade-up">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          ประวัติการบันทึกของฉัน
+        </h2>
+        <Card>
+          <LoadingBlock compact label="กำลังโหลดประวัติ…" />
+        </Card>
+      </div>
+    );
+  }
   if (runs.length === 0) return null;
   return (
     <div ref={ref} className="animate-fade-up scroll-mt-6">
@@ -554,7 +569,7 @@ const rejectedNoteClass = "rounded-md bg-danger/10 px-3 py-2 text-xs text-danger
 
 function WeightTab({ onSaved }: { onSaved: (p: WeightPeriod) => void }) {
   const { user } = useAuth();
-  const { weights: allWeights, refresh } = useWeights(user?.id);
+  const { weights: allWeights, loading: weightsLoading, refresh } = useWeights(user?.id);
   const startCardRef = useRef<HTMLDivElement>(null);
   const endCardRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
@@ -678,6 +693,7 @@ function WeightTab({ onSaved }: { onSaved: (p: WeightPeriod) => void }) {
       <WeightHistory
         ref={historyRef}
         weights={allWeights}
+        loading={weightsLoading}
         onEdit={openWeightEdit}
       />
     </div>
@@ -687,13 +703,27 @@ function WeightTab({ onSaved }: { onSaved: (p: WeightPeriod) => void }) {
 const WeightHistory = forwardRef(function WeightHistory(
   {
     weights,
+    loading,
     onEdit,
   }: {
     weights: WeightEntry[];
+    loading?: boolean;
     onEdit: (w: WeightEntry) => void;
   },
   ref: ForwardedRef<HTMLDivElement>,
 ) {
+  if (loading) {
+    return (
+      <div ref={ref} className="scroll-mt-6 animate-fade-up">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          ประวัติการบันทึกของฉัน
+        </h2>
+        <Card>
+          <LoadingBlock compact label="กำลังโหลดประวัติ…" />
+        </Card>
+      </div>
+    );
+  }
   if (weights.length === 0) return null;
 
   const sorted = [...weights].sort(

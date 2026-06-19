@@ -5,15 +5,15 @@ import { useAuth } from "@/lib/auth";
 import { currentMonthKey, missionForMonth, monthLabel, monthOf, END_WEIGHT_GRACE_DAYS } from "@/lib/missions";
 import { useRuns, useWeights } from "@/lib/hooks/useEntries";
 import { useSubordinates } from "@/lib/hooks/useTeam";
-import { Stat } from "@/components/ui";
+import { Stat, LoadingBlock, Card } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 export default function Home() {
   const { user, isLead } = useAuth();
-  const { runs } = useRuns(user?.id);
+  const { runs, loading: runsLoading } = useRuns(user?.id);
   const weighMonth = currentMonthKey();
-  const { weights: weighs } = useWeights(user?.id, weighMonth);
-  const { team } = useSubordinates(isLead ? user?.id : undefined);
+  const { weights: weighs, loading: weightsLoading } = useWeights(user?.id, weighMonth);
+  const { team, loading: teamLoading } = useSubordinates(isLead ? user?.id : undefined);
 
   if (!user) return null;
 
@@ -47,7 +47,7 @@ export default function Home() {
             to: "/app/admin",
             icon: Users,
             title: "ข้อมูลทีมของฉัน",
-            desc: `ตรวจสอบรายการที่ลูกทีม ${team.length} คนบันทึกเข้ามา`,
+            desc: `ตรวจสอบรายการที่ลูกทีม ${teamLoading ? "…" : team.length} คนบันทึกเข้ามา`,
             cta: "ดูข้อมูลทีม",
           },
         ]
@@ -99,10 +99,16 @@ export default function Home() {
               <p className="text-sm font-semibold text-foreground">
                 น้ำหนักประจำเดือน · {monthLabel(weighMonth)}
               </p>
+              {weightsLoading ? (
+                <div className="mt-3">
+                  <LoadingBlock compact label="กำลังโหลดข้อมูลน้ำหนัก…" />
+                </div>
+              ) : (
               <div className="mt-2 flex flex-wrap gap-2">
                 <WeightChip label="ต้นเดือน" done={hasStart} />
                 <WeightChip label="สิ้นเดือน" done={hasEnd} />
               </div>
+              )}
               <ul className="mt-3 space-y-1">
                 <li className="flex items-start gap-1.5 text-xs text-muted-foreground">
                   <Calendar className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
@@ -132,6 +138,12 @@ export default function Home() {
 
       {/* Personal stats */}
       <section className="grid gap-4 sm:grid-cols-2">
+        {runsLoading ? (
+          <Card className="sm:col-span-2">
+            <LoadingBlock label="กำลังโหลดสถิติการวิ่ง…" />
+          </Card>
+        ) : (
+          <>
         <StatGroup title="สะสมทั้งหมด" caption="ตั้งแต่เริ่มโครงการ" icon={TrendingUp} tone="ink">
           <Stat label="ระยะทางสะสม" value={totalKm.toFixed(1)} unit="กม." />
           <Stat label="จำนวนครั้งที่วิ่ง" value={String(runs.length)} unit="ครั้ง" />
@@ -140,6 +152,8 @@ export default function Home() {
           <Stat label="ระยะทางสะสม" value={monthKm.toFixed(1)} unit="กม." />
           <Stat label="จำนวนครั้งที่วิ่ง" value={String(thisMonthRuns.length)} unit="ครั้ง" />
         </StatGroup>
+          </>
+        )}
       </section>
 
       {/* Menu */}

@@ -5,6 +5,8 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_ANON_KEY?: string;
   readonly VITE_AUTH_MODE?: "api" | "local";
   readonly VITE_API_PROXY?: string;
+  /** หน่วง spinner ใน dev (ms) — ตั้ง 0 เพื่อปิด */
+  readonly VITE_LOADING_DEMO_MS?: string;
 }
 
 interface ImportMeta {

@@ -14,7 +14,7 @@ import {
 import { useRuns, useWeights } from "@/lib/hooks/useEntries";
 import { useSubordinates } from "@/lib/hooks/useTeam";
 import { formatThaiDate, formatThaiDateTime, pad2 } from "@/lib/utils";
-import { Card, Badge, Button } from "@/components/ui";
+import { Card, Badge, Button, LoadingBlock } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 function fmtDuration(sec: number) {
@@ -26,11 +26,12 @@ function fmtDuration(sec: number) {
 
 export default function Admin() {
   const { user } = useAuth();
-  const { team } = useSubordinates(user?.id);
+  const { team, loading: teamLoading } = useSubordinates(user?.id);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [gallery, setGallery] = useState<{ images: string[]; index: number } | null>(null);
   const [runCounts, setRunCounts] = useState<Record<string, number>>({});
   const [freshCounts, setFreshCounts] = useState<Record<string, number>>({});
+  const [countsLoading, setCountsLoading] = useState(false);
   const openGallery = (images: string[]) => images.length > 0 && setGallery({ images, index: 0 });
 
   useEffect(() => {
@@ -38,16 +39,21 @@ export default function Admin() {
   }, [team, selectedId]);
 
   const selected = team.find((t) => t.id === selectedId);
-  const { runs, refresh: refreshRuns } = useRuns(selected?.id);
-  const { weights, refresh: refreshWeights } = useWeights(selected?.id);
+  const { runs, loading: runsLoading, refresh: refreshRuns } = useRuns(selected?.id);
+  const { weights, loading: weightsLoading, refresh: refreshWeights } = useWeights(selected?.id);
+  const entriesLoading = !!selected && (runsLoading || weightsLoading);
   const bump = () => {
     void refreshRuns();
     void refreshWeights();
   };
 
   useEffect(() => {
-    if (!user || team.length === 0) return;
+    if (!user || team.length === 0) {
+      setCountsLoading(false);
+      return;
+    }
     let cancelled = false;
+    setCountsLoading(true);
     const load = async () => {
       const counts: Record<string, number> = {};
       const fresh: Record<string, number> = {};
@@ -64,10 +70,14 @@ export default function Admin() {
       if (!cancelled) {
         setRunCounts(counts);
         setFreshCounts(fresh);
+        setCountsLoading(false);
       }
     };
     void load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      setCountsLoading(false);
+    };
   }, [user, team]);
 
   useEffect(() => {
@@ -98,9 +108,14 @@ export default function Admin() {
         {/* Team list */}
         <aside className="space-y-2">
           <p className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            สมาชิกในทีม · {team.length} คน
+            สมาชิกในทีม · {teamLoading ? "…" : `${team.length} คน`}
           </p>
-          {team.map((member) => {
+          {teamLoading ? (
+            <Card>
+              <LoadingBlock compact label="กำลังโหลดทีม…" />
+            </Card>
+          ) : (
+          team.map((member) => {
             const count = runCounts[member.id] ?? 0;
             const fresh = freshCounts[member.id] ?? 0;
             const active = member.id === selectedId;
@@ -121,7 +136,9 @@ export default function Admin() {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold text-foreground">{member.name}</span>
-                  <span className="tnum block text-xs text-muted-foreground">รหัส {member.id} · {count} กิจกรรม</span>
+                  <span className="tnum block text-xs text-muted-foreground">
+                    รหัส {member.id} · {countsLoading ? "…" : `${count} กิจกรรม`}
+                  </span>
                 </span>
                 {fresh > 0 && (
                   <span
@@ -134,7 +151,8 @@ export default function Admin() {
                 <ChevronRight className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
               </button>
             );
-          })}
+          })
+          )}
         </aside>
 
         {/* Detail */}
@@ -154,7 +172,11 @@ export default function Admin() {
 
               <div>
                 <h3 className="mb-2 text-sm font-semibold text-foreground">รายการวิ่ง</h3>
-                {runs.length === 0 ? (
+                {entriesLoading ? (
+                  <Card>
+                    <LoadingBlock compact label="กำลังโหลดรายการวิ่ง…" />
+                  </Card>
+                ) : runs.length === 0 ? (
                   <EmptyState text="ยังไม่มีการบันทึกการวิ่ง" />
                 ) : (
                   <Card className="divide-y divide-border overflow-hidden">
@@ -165,7 +187,11 @@ export default function Admin() {
 
               <div>
                 <h3 className="mb-2 text-sm font-semibold text-foreground">บันทึกน้ำหนัก</h3>
-                {weights.length === 0 ? (
+                {entriesLoading ? (
+                  <Card>
+                    <LoadingBlock compact label="กำลังโหลดน้ำหนัก…" />
+                  </Card>
+                ) : weights.length === 0 ? (
                   <EmptyState text="ยังไม่มีการบันทึกน้ำหนัก" />
                 ) : (
                   <Card className="divide-y divide-border overflow-hidden">
@@ -174,6 +200,10 @@ export default function Admin() {
                 )}
               </div>
             </>
+          ) : teamLoading ? (
+            <Card>
+              <LoadingBlock label="กำลังโหลดข้อมูลทีม…" />
+            </Card>
           ) : (
             <EmptyState text="เลือกสมาชิกในทีมเพื่อดูข้อมูล" />
           )}

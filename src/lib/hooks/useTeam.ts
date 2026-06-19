@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchSubordinates } from "../entries";
 import type { Employee } from "../types";
+import { holdLoading } from "./loading";
 
 export function useSubordinates(managerId: string | undefined) {
   const [team, setTeam] = useState<Employee[]>([]);
@@ -13,12 +14,14 @@ export function useSubordinates(managerId: string | undefined) {
       return;
     }
     setLoading(true);
+    const startedAt = Date.now();
     try {
       setTeam(await fetchSubordinates(managerId));
     } catch (e) {
       console.error("useSubordinates:", e);
       setTeam([]);
     } finally {
+      await holdLoading(startedAt);
       setLoading(false);
     }
   }, [managerId]);

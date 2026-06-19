@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /* ---------------- Button ---------------- */
@@ -220,6 +220,48 @@ export function ConfirmDialog({
           <Button variant={tone === "danger" ? "danger" : "primary"} onClick={onConfirm}>{confirmLabel}</Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ---------------- Loading ---------------- */
+export function LoadingSpinner({
+  className,
+  size = "md",
+}: {
+  className?: string;
+  size?: "sm" | "md" | "lg";
+}) {
+  const sizes = { sm: "h-4 w-4", md: "h-6 w-6", lg: "h-8 w-8" };
+  return (
+    <Loader2
+      className={cn(sizes[size], "animate-spin text-primary", className)}
+      aria-hidden
+    />
+  );
+}
+
+export function LoadingBlock({
+  label = "กำลังโหลด…",
+  className,
+  compact,
+}: {
+  label?: string;
+  className?: string;
+  /** ความสูงน้อยลง — ใช้ใน card / sidebar */
+  compact?: boolean;
+}) {
+  return (
+    <div
+      role="status"
+      className={cn(
+        "flex flex-col items-center justify-center gap-2 text-sm text-muted-foreground",
+        compact ? "py-6" : "py-10",
+        className,
+      )}
+    >
+      <LoadingSpinner size="lg" />
+      <span>{label}</span>
     </div>
   );
 }

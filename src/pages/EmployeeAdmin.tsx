@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Pencil, Trash2, UserCog, RefreshCw } from "lucide-react";
+import { Plus, Pencil, Trash2, UserCog, RefreshCw } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { apiCreateEmployee, apiDeleteEmployee, apiFetchEmployees, apiUpdateEmployee } from "@/lib/api";
 import {
@@ -9,7 +9,7 @@ import {
   type EmployeeFormState,
   type EmployeeRecord,
 } from "@/lib/employee-admin";
-import { Badge, Button, Card, ConfirmDialog, Field, Input, Select } from "@/components/ui";
+import { Badge, Button, Card, ConfirmDialog, Field, Input, Select, LoadingBlock } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 const ROLE_LABEL = { employee: "พนักงาน", super_admin: "Super Admin" } as const;
@@ -301,10 +301,7 @@ export default function EmployeeAdmin() {
 
       <Card className="overflow-hidden">
         {loading ? (
-          <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            กำลังโหลด…
-          </div>
+          <LoadingBlock label="กำลังโหลดรายชื่อพนักงาน…" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[960px] text-left text-sm">

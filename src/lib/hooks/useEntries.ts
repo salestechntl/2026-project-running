@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { DATA_CHANGED_EVENT, fetchRuns, fetchWeights } from "../entries";
 import type { RunEntry, WeightEntry } from "../store";
+import { holdLoading } from "./loading";
 
 /** นับรายการวิ่ง + น้ำหนักที่หัวหน้าขอให้แก้ไข */
 export function countRejectedEntries(runs: RunEntry[], weights: WeightEntry[]): number {
@@ -55,12 +56,14 @@ export function useRuns(employeeId: string | undefined) {
       return;
     }
     setLoading(true);
+    const startedAt = Date.now();
     try {
       setRuns(await fetchRuns(employeeId));
     } catch (e) {
       console.error("useRuns:", e);
       setRuns([]);
     } finally {
+      await holdLoading(startedAt);
       setLoading(false);
     }
   }, [employeeId]);
@@ -89,6 +92,7 @@ export function useWeights(employeeId: string | undefined, month?: string) {
       return;
     }
     setLoading(true);
+    const startedAt = Date.now();
     try {
       const rows = await fetchWeights(employeeId);
       setWeights(month ? rows.filter((w) => w.month === month) : rows);
@@ -96,6 +100,7 @@ export function useWeights(employeeId: string | undefined, month?: string) {
       console.error("useWeights:", e);
       setWeights([]);
     } finally {
+      await holdLoading(startedAt);
       setLoading(false);
     }
   }, [employeeId, month]);
