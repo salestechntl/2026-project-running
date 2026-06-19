@@ -15,11 +15,24 @@ export function todayISO(): string {
 export function formatThaiDate(iso: string): string {
   if (!iso) return "—";
   const [y, m, d] = iso.split("-").map(Number);
-  const months = [
-    "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
-    "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
-  ];
-  return `${d} ${months[m - 1]} ${y + 543}`;
+  return `${d} ${thaiMonthShort(m - 1)} ${y + 543}`;
+}
+
+const THAI_MONTHS_SHORT = [
+  "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+  "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
+];
+
+function thaiMonthShort(index: number): string {
+  return THAI_MONTHS_SHORT[index] ?? "—";
+}
+
+/** วันที่และเวลาแบบไทยจาก timestamp (มิลลิวินาที) */
+export function formatThaiDateTime(ts: number): string {
+  if (!ts || Number.isNaN(ts)) return "—";
+  const d = new Date(ts);
+  const date = `${d.getDate()} ${thaiMonthShort(d.getMonth())} ${d.getFullYear() + 543}`;
+  return `${date} ${pad2(d.getHours())}:${pad2(d.getMinutes())} น.`;
 }
 
 /** "01:32:40" or "32:40" -> minutes (number). */
@@ -34,4 +47,12 @@ export function paceFrom(distanceKm: number, h: number, m: number, s: number): s
 
 export function pad2(n: number): string {
   return n.toString().padStart(2, "0");
+}
+
+/** ระยะเวลาวิ่งแบบไทย เช่น "1 ชม. 0 นาที 0 วินาที" */
+export function formatDurationThai(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return `${h} ชม. ${m} นาที ${s} วินาที`;
 }

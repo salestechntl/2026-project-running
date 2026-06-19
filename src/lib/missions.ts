@@ -70,6 +70,88 @@ export function monthKeyOffset(monthKey: string, deltaMonths: number): string {
 /** จำนวนวันผ่อนผันหลังสิ้นเดือนสำหรับการกรอกน้ำหนักสิ้นเดือน */
 export const END_WEIGHT_GRACE_DAYS = 7;
 
+/** วันที่ 1–7 ของเดือน — บันทึกการวิ่งย้อนหลังได้ตั้งแต่วันที่ 1 ของเดือนก่อนหน้า */
+export const RUN_DATE_PREV_MONTH_GRACE_DAYS = 7;
+
+/**
+ * ช่วงวันที่เลือกได้สำหรับบันทึกการวิ่ง
+ * - วันที่ 1–7 ของเดือน: ตั้งแต่วันที่ 1 เดือนก่อนหน้า → วันนี้
+ * - วันที่ 8–31 ของเดือน: ตั้งแต่วันที่ 1 เดือนปัจจุบัน → วันนี้
+ */
+export function runDateBounds(campaignMinISO?: string): { min: string; max: string } {
+  const today = todayISOEffective();
+  const max = today;
+  const dayOfMonth = parseInt(today.slice(8, 10), 10);
+  const currentMonth = monthOf(today);
+
+  let min =
+    dayOfMonth <= RUN_DATE_PREV_MONTH_GRACE_DAYS
+      ? `${monthKeyOffset(currentMonth, -1)}-01`
+      : `${currentMonth}-01`;
+
+  if (campaignMinISO && min < campaignMinISO) min = campaignMinISO;
+  if (max < min) min = max;
+
+  return { min, max };
+}
+
+export function isRunDateInBounds(date: string, campaignMinISO?: string): boolean {
+  const { min, max } = runDateBounds(campaignMinISO);
+  return date >= min && date <= max;
+}
+
+/** ช่วงเลือกในฟอร์ม — รักษาวันที่เดิมของรายการที่กำลังแก้ไขไว้ได้ */
+export function runDateSelectionBounds(
+  campaignMinISO?: string,
+  preserveDateISO?: string,
+): { min: string; max: string } {
+  const base = runDateBounds(campaignMinISO);
+  if (preserveDateISO && preserveDateISO < base.min) {
+    return { min: preserveDateISO, max: base.max };
+  }
+  return base;
+}
+
+export function isRunDateAllowed(
+  date: string,
+  campaignMinISO?: string,
+  preserveDateISO?: string,
+): boolean {
+  const { min, max } = runDateSelectionBounds(campaignMinISO, preserveDateISO);
+  return date >= min && date <= max;
+}
+
+/**
+ * เดือนที่เลือกได้ในฟอร์มบันทึกน้ำหนัก
+ * - วันที่ 1–7: เดือนก่อนหน้า + เดือนปัจจุบัน
+ * - วันที่ 8–31: เดือนปัจจุบันเท่านั้น
+ */
+export function weightMonthOptions(
+  campaignStartMonth: string = MONTHLY_MISSIONS[0].month,
+  extraMonths: string[] = [],
+): string[] {
+  const cur = currentMonthKey();
+  const today = todayISOEffective();
+  const dayOfMonth = parseInt(today.slice(8, 10), 10);
+
+  let base: string[] = [cur];
+  if (dayOfMonth <= RUN_DATE_PREV_MONTH_GRACE_DAYS) {
+    base = [monthKeyOffset(cur, -1), cur];
+  }
+
+  return [...new Set([...base, ...extraMonths])]
+    .filter((m) => m >= campaignStartMonth && m <= cur)
+    .sort()
+    .reverse();
+}
+
+export function weightMonthFieldHint(): string {
+  const day = parseInt(todayISOEffective().slice(8, 10), 10);
+  return day <= RUN_DATE_PREV_MONTH_GRACE_DAYS
+    ? "วันที่ 1–7 ของเดือน: เลือกได้เดือนก่อนหน้าและเดือนปัจจุบัน"
+    : "เลือกได้เฉพาะเดือนปัจจุบัน";
+}
+
 /**
  * หน้าต่างเวลาสำหรับกรอก "น้ำหนักสิ้นเดือน"
  * เปิดให้กรอกตั้งแต่ "วันสุดท้ายของเดือน" จนถึง END_WEIGHT_GRACE_DAYS วันหลังสิ้นเดือน

@@ -13,7 +13,7 @@ import {
 } from "@/lib/entries";
 import { useRuns, useWeights } from "@/lib/hooks/useEntries";
 import { useSubordinates } from "@/lib/hooks/useTeam";
-import { formatThaiDate, pad2 } from "@/lib/utils";
+import { formatThaiDate, formatThaiDateTime, pad2 } from "@/lib/utils";
 import { Card, Badge, Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
@@ -284,7 +284,7 @@ function StatusControls({
   if (status === "rejected") {
     return (
       <div className="flex items-center gap-1.5">
-        <Badge tone="warning"><AlertTriangle className="h-3 w-3" /> รอแก้ไข</Badge>
+        <Badge tone="danger"><AlertTriangle className="h-3 w-3" /> ขอให้แก้ไข</Badge>
         <button
           onClick={onRestore}
           className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -325,6 +325,9 @@ function RunRow({ run, onPreview, onChange }: { run: RunEntry; onPreview: (image
           <p className="tnum mt-0.5 text-xs text-muted-foreground">
             {run.distanceKm.toFixed(2)} กม. · {fmtDuration(run.durationSec)} ชม.{run.note ? ` · ${run.note}` : ""}
           </p>
+          <p className="tnum mt-0.5 text-xs text-muted-foreground/80">
+            อัปเดตล่าสุด {formatThaiDateTime(run.updatedAt)}
+          </p>
         </div>
         <StatusControls
           status={run.status}
@@ -358,6 +361,9 @@ function WeightRow({ weight, onPreview, onChange }: { weight: WeightEntry; onPre
             <Badge tone="neutral">{weight.period === "start" ? "ต้นเดือน" : "สิ้นเดือน"}</Badge>
           </div>
           <p className="tnum mt-0.5 text-xs text-muted-foreground">เดือน {weight.month}</p>
+          <p className="tnum mt-0.5 text-xs text-muted-foreground/80">
+            อัปเดตล่าสุด {formatThaiDateTime(weight.updatedAt)}
+          </p>
         </div>
         <StatusControls
           status={weight.status}

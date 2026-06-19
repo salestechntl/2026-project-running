@@ -17,7 +17,7 @@ import type { Employee } from "./types";
 export type { Employee };
 
 export const EMPLOYEES: Employee[] = [
-  { id: "10001", name: "ปวริศา ทองดี", position: "ผู้อำนวยการฝ่าย", department: "People & Culture", managerId: null },
+  { id: "10001", name: "ปวริศา ทองดี", position: "ผู้อำนวยการฝ่าย", department: "People & Culture", managerId: null, role: "super_admin" },
   { id: "10002", name: "ธนกฤต ศรีสุข", position: "ผู้จัดการทีม", department: "People & Culture", managerId: "10001" },
   { id: "10010", name: "ณัฐวุฒิ พิพัฒน์", position: "เจ้าหน้าที่อาวุโส", department: "People & Culture", managerId: "10002" },
   { id: "10011", name: "สิริกร วงศ์ไทย", position: "เจ้าหน้าที่", department: "People & Culture", managerId: "10002" },
@@ -41,6 +41,10 @@ export function directReports(managerId: string): Employee[] {
 
 export function isTeamLead(id: string): boolean {
   return directReports(id).length > 0;
+}
+
+export function isSuperAdmin(emp: Employee): boolean {
+  return emp.role === "super_admin";
 }
 
 /** ลูกทีมทั้งสายงาน (recursive) — ลูกน้องตรง + ลูกน้องของลูกน้อง ทุกระดับ */

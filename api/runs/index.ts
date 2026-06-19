@@ -5,6 +5,7 @@ import { canAccessEmployee } from "../_lib/team/access.js";
 import { mapRun, validateImageSlots, type DbRunRow } from "../_lib/entries/map.js";
 import { mapRunDbError } from "../_lib/entries/db-error.js";
 import { attachRunImages } from "../_lib/entries/attach-run-images.js";
+import { isRunDateAllowed } from "../_lib/entries/run-date-bounds.js";
 import {
   loadAttachmentViews,
   migrateLegacyRunImages,
@@ -91,6 +92,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
         return res.status(400).json({ error: "วันที่ไม่ถูกต้อง" });
       }
+
+      let existingRow: DbRunRow | undefined;
+      if (id) {
+        const { data: existing, error: fetchError } = await supabase
+          .from("run_entries")
+          .select("*")
+          .eq("id", id)
+          .maybeSingle();
+
+        if (fetchError || !existing) {
+          return res.status(404).json({ error: "ไม่พบรายการที่ต้องการแก้ไข" });
+        }
+        existingRow = existing as DbRunRow;
+        if (existingRow.employee_id !== auth.sub) {
+          return res.status(403).json({ error: "แก้ไขได้เฉพาะรายการของตนเอง" });
+        }
+      }
+
+      if (!isRunDateAllowed(date, undefined, existingRow?.run_date)) {
+        return res.status(400).json({ error: "วันที่อยู่นอกช่วงที่อนุญาตให้บันทึก" });
+      }
       if (runType !== "discipline" && runType !== "mission") {
         return res.status(400).json({ error: "ประเภทการวิ่งไม่ถูกต้อง" });
       }
@@ -117,20 +139,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       };
 
       if (id) {
-        const { data: existing, error: fetchError } = await supabase
-          .from("run_entries")
-          .select("*")
-          .eq("id", id)
-          .maybeSingle();
-
-        if (fetchError || !existing) {
-          return res.status(404).json({ error: "ไม่พบรายการที่ต้องการแก้ไข" });
-        }
-        const row = existing as DbRunRow;
-        if (row.employee_id !== auth.sub) {
-          return res.status(403).json({ error: "แก้ไขได้เฉพาะรายการของตนเอง" });
-        }
-
+        const row = existingRow!;
         await snapshotEntry(supabase, "run", id, row as unknown as Record<string, unknown>, auth.sub, "edit");
 
         const { data: updated, error: updateError } = await supabase

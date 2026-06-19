@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { findEmployee, isTeamLead } from "./data";
+import { findEmployee, isSuperAdmin as employeeIsSuperAdmin, isTeamLead } from "./data";
 import { getAuthMode } from "./auth-config";
 import { apiLogin, apiMe, getStoredToken, setStoredToken } from "./api";
 import type { Employee } from "./types";
@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const id = localStorage.getItem(LOCAL_SESSION_KEY);
       if (id) {
         const emp = findEmployee(id);
-        if (emp) applyUser(emp, isTeamLead(emp.id), false);
+        if (emp) applyUser(emp, isTeamLead(emp.id), employeeIsSuperAdmin(emp));
       }
       setLoading(false);
       return;
@@ -84,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const emp = findEmployee(id);
       if (!emp) return { ok: false, error: "ไม่พบรหัสพนักงานนี้ในระบบ กรุณาตรวจสอบอีกครั้ง" };
       localStorage.setItem(LOCAL_SESSION_KEY, emp.id);
-      applyUser(emp, isTeamLead(emp.id), false);
+      applyUser(emp, isTeamLead(emp.id), employeeIsSuperAdmin(emp));
       return { ok: true };
     }
 

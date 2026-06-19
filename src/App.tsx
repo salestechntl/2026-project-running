@@ -4,6 +4,7 @@ import { Home as HomeIcon, PenLine, BarChart3, Users, Building2, Download, UserC
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { countNewForTeam, DATA_CHANGED_EVENT } from "@/lib/entries";
 import { useSubordinates } from "@/lib/hooks/useTeam";
+import { useRejectedEntryCount } from "@/lib/hooks/useEntries";
 import { AppShell, type NavItem } from "@/components/AppShell";
 import Login from "@/pages/Login";
 import Home from "@/pages/Home";
@@ -58,10 +59,17 @@ function ProtectedLayout() {
   if (!user) return <Navigate to="/" replace />;
 
   const teamNew = useNewTeamCount(user.id, isLead);
+  const rejectedCount = useRejectedEntryCount(user.id);
 
   const nav: NavItem[] = [
     { to: "/app", label: "หน้าแรก", short: "หน้าแรก", icon: HomeIcon },
-    { to: "/app/log", label: "บันทึกข้อมูล", short: "บันทึก", icon: PenLine },
+    {
+      to: "/app/log",
+      label: "บันทึกข้อมูล",
+      short: "บันทึก",
+      icon: PenLine,
+      badge: rejectedCount || undefined,
+    },
     { to: "/app/dashboard", label: "Dashboard", short: "Dashboard", icon: BarChart3 },
     ...(isLead ? [{ to: "/app/admin", label: "ข้อมูลทีม", short: "ทีม", icon: Users, badge: teamNew }] : []),
     ...(isSuperAdmin

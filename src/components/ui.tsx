@@ -133,6 +133,7 @@ const badgeTones = {
   accent: "bg-primary/10 text-primary",
   success: "bg-success/12 text-success",
   warning: "bg-warning/15 text-[hsl(32_80%_38%)]",
+  danger: "bg-danger text-white",
   ink: "bg-ink/10 text-ink",
   info: "bg-[hsl(211_100%_94%)] text-[hsl(211_85%_42%)]",
 } as const;
