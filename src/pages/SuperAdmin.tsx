@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { apiOrgBatches, apiOrgImport } from "@/lib/api";
 import type { OrgImportBatch, OrgImportResponse, OrgRowError } from "@/lib/auth-types";
 import { Button, Card, Badge } from "@/components/ui";
+import { readCsvTextFromFile } from "@/lib/csv-encoding";
 import { cn } from "@/lib/utils";
 
 function formatDate(iso: string) {
@@ -25,6 +26,7 @@ const STATUS_LABEL: Record<OrgImportBatch["status"], string> = {
 export default function SuperAdmin() {
   const { authMode } = useAuth();
   const [file, setFile] = useState<File | null>(null);
+  const [fileLoading, setFileLoading] = useState(false);
   const [csvText, setCsvText] = useState("");
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<OrgImportResponse | null>(null);
@@ -64,9 +66,14 @@ export default function SuperAdmin() {
       setCsvText("");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => setCsvText(String(reader.result ?? ""));
-    reader.readAsText(f, "UTF-8");
+    setFileLoading(true);
+    void readCsvTextFromFile(f)
+      .then((text) => setCsvText(text))
+      .catch(() => {
+        setCsvText("");
+        flash("อ่านไฟล์ไม่สำเร็จ — ลองบันทึก CSV ใหม่จาก Excel");
+      })
+      .finally(() => setFileLoading(false));
   }
 
   async function runPreview() {
@@ -176,7 +183,9 @@ export default function SuperAdmin() {
           <p className="text-sm font-medium text-foreground">
             {file ? file.name : "ลากไฟล์มาวาง หรือคลิกเลือก"}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">รองรับ .csv (UTF-8)</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            รองรับ UTF-8 และ CSV จาก Excel (ภาษาไทย) — ระบบตรวจ encoding อัตโนมัติ
+          </p>
           <input
             type="file"
             accept=".csv,text/csv"
@@ -186,7 +195,7 @@ export default function SuperAdmin() {
         </label>
 
         <div className="mt-4 flex flex-wrap gap-2">
-          <Button onClick={runPreview} disabled={loading || !csvText.trim()}>
+          <Button onClick={runPreview} disabled={loading || fileLoading || !csvText.trim()}>
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4" />}
             ตรวจสอบ (Preview)
           </Button>

@@ -13,16 +13,9 @@ import {
 } from "@/lib/entries";
 import { useRuns, useWeights } from "@/lib/hooks/useEntries";
 import { useSubordinates } from "@/lib/hooks/useTeam";
-import { formatThaiDate, formatThaiDateTime, pad2 } from "@/lib/utils";
+import { formatThaiDate, formatThaiDateTime, formatDurationThai } from "@/lib/utils";
 import { Card, Badge, Button, LoadingBlock } from "@/components/ui";
 import { cn } from "@/lib/utils";
-
-function fmtDuration(sec: number) {
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
-  return h > 0 ? `${h}:${pad2(m)}:${pad2(s)}` : `${m}:${pad2(s)}`;
-}
 
 export default function Admin() {
   const { user } = useAuth();
@@ -353,7 +346,7 @@ function RunRow({ run, onPreview, onChange }: { run: RunEntry; onPreview: (image
             </Badge>
           </div>
           <p className="tnum mt-0.5 text-xs text-muted-foreground">
-            {run.distanceKm.toFixed(2)} กม. · {fmtDuration(run.durationSec)} ชม.{run.note ? ` · ${run.note}` : ""}
+            {run.distanceKm.toFixed(2)} กม. · {formatDurationThai(run.durationSec)}{run.note ? ` · ${run.note}` : ""}
           </p>
           <p className="tnum mt-0.5 text-xs text-muted-foreground/80">
             อัปเดตล่าสุด {formatThaiDateTime(run.updatedAt)}
