@@ -3,6 +3,7 @@ import { requireAuth } from "../_lib/auth/require.js";
 import { createAdminClient, isSupabaseConfigured } from "../_lib/supabase/admin.js";
 import { canAccessEmployee } from "../_lib/team/access.js";
 import { mapWeight, validateProofSlot, type DbWeightRow } from "../_lib/entries/map.js";
+import { resolveSubmitStatus } from "../_lib/entries/status.js";
 import {
   loadAttachmentViews,
   migrateLegacyWeightImage,
@@ -70,6 +71,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === "POST") {
       const body = req.body as Record<string, unknown>;
       const employeeId = String(body.employeeId ?? body.employee_id ?? auth.sub).trim();
+      const id = body.id ? String(body.id) : undefined;
       const month = String(body.month ?? "").trim();
       const period = body.period;
       const weightKg = Number(body.weightKg ?? body.weight_kg);
@@ -97,13 +99,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: "แนบภาพน้ำหนัก" });
       }
 
-      const { data: existing } = await supabase
-        .from("weight_entries")
-        .select("*")
-        .eq("employee_id", employeeId)
-        .eq("month", month)
-        .eq("period", period)
-        .maybeSingle();
+      let existingRow: DbWeightRow | undefined;
+      if (id) {
+        const { data: existing, error: fetchError } = await supabase
+          .from("weight_entries")
+          .select("*")
+          .eq("id", id)
+          .maybeSingle();
+
+        if (fetchError || !existing) {
+          return res.status(404).json({ error: "ไม่พบรายการที่ต้องการแก้ไข" });
+        }
+        existingRow = existing as DbWeightRow;
+        if (existingRow.employee_id !== auth.sub) {
+          return res.status(403).json({ error: "แก้ไขได้เฉพาะรายการของตนเอง" });
+        }
+        if (existingRow.status === "rejected") {
+          return res.status(400).json({ error: "รายการที่ไม่ผ่านแล้วแก้ไขไม่ได้ กรุณาส่งรายการใหม่" });
+        }
+        if (!auth.isLead && existingRow.status !== "pending") {
+          return res.status(400).json({ error: "แก้ไขได้เฉพาะรายการที่รออนุมัติ" });
+        }
+      }
+
+      const isLeadSelf = auth.isLead && employeeId === auth.sub;
+      const status = resolveSubmitStatus(isLeadSelf);
+      const nowIso = new Date().toISOString();
+      const approvalFields =
+        status === "approved"
+          ? { approved_by: auth.sub, approved_at: nowIso }
+          : { approved_by: null, approved_at: null };
 
       const rowPayload = {
         employee_id: employeeId,
@@ -111,20 +136,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         period,
         weight_kg: weightKg,
         proof_image: null,
-        status: "submitted" as const,
+        status,
         reject_note: null,
         rejected_by: null,
+        ...approvalFields,
       };
 
       let entryId: string;
       let row: DbWeightRow;
+      let isUpdate = false;
 
-      if (existing?.id) {
+      if (id && existingRow) {
         await snapshotEntry(
           supabase,
           "weight",
-          existing.id,
-          existing as unknown as Record<string, unknown>,
+          id,
+          existingRow as unknown as Record<string, unknown>,
           auth.sub,
           "edit",
         );
@@ -132,7 +159,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const { data: updated, error: updateError } = await supabase
           .from("weight_entries")
           .update(rowPayload)
-          .eq("id", existing.id)
+          .eq("id", id)
           .select("*")
           .single();
 
@@ -140,8 +167,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           console.error("weight update error:", updateError);
           return res.status(500).json({ error: "ไม่สามารถบันทึกน้ำหนักได้" });
         }
-        entryId = existing.id;
+        entryId = id;
         row = updated as DbWeightRow;
+        isUpdate = true;
       } else {
         const { data: created, error: insertError } = await supabase
           .from("weight_entries")
@@ -175,7 +203,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const image = { url: view.urls[0], ref: view.refs[0] };
-      return res.status(existing?.id ? 200 : 201).json({ weight: mapWeight(row, image) });
+      return res.status(isUpdate ? 200 : 201).json({ weight: mapWeight(row, image) });
     }
 
     return res.status(405).json({ error: "Method not allowed" });

@@ -10,8 +10,8 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ['"IBM Plex Sans Thai"', "Inter", "system-ui", "sans-serif"],
-        display: ['Inter', '"IBM Plex Sans Thai"', "system-ui", "sans-serif"],
+        sans: ['"Noto Sans Thai"', '"IBM Plex Sans Thai"', "Inter", "system-ui", "sans-serif"],
+        display: ['"Noto Sans Thai"', "Inter", '"IBM Plex Sans Thai"', "system-ui", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -22,6 +22,10 @@ export default {
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
+        },
+        accent: {
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
         },
         muted: {
           DEFAULT: "hsl(var(--muted))",
@@ -41,15 +45,18 @@ export default {
       },
       borderRadius: {
         lg: "var(--radius)",
-        md: "calc(var(--radius) - 4px)",
-        sm: "calc(var(--radius) - 8px)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
+        xl: "calc(var(--radius) + 4px)",
+        "2xl": "calc(var(--radius) + 8px)",
       },
       boxShadow: {
-        xs: "0 1px 2px rgba(17,17,26,0.05)",
-        sm: "0 1px 2px rgba(17,17,26,0.06), 0 2px 6px rgba(17,17,26,0.04)",
-        md: "0 2px 4px rgba(17,17,26,0.05), 0 6px 18px rgba(17,17,26,0.06)",
-        lg: "0 8px 30px rgba(17,17,26,0.08), 0 2px 6px rgba(17,17,26,0.04)",
-        glow: "0 8px 28px -6px hsl(var(--primary) / 0.45)",
+        xs: "0 1px 2px rgba(0, 38, 100, 0.04)",
+        sm: "0 1px 3px rgba(0, 38, 100, 0.06), 0 2px 8px rgba(0, 38, 100, 0.04)",
+        md: "0 4px 12px rgba(0, 38, 100, 0.08), 0 2px 4px rgba(0, 38, 100, 0.04)",
+        lg: "0 12px 32px rgba(0, 38, 100, 0.1), 0 4px 8px rgba(0, 38, 100, 0.04)",
+        glow: "0 8px 28px -6px hsl(var(--primary) / 0.4)",
+        "glow-accent": "0 8px 24px -6px hsl(var(--accent) / 0.45)",
       },
       keyframes: {
         "fade-up": {

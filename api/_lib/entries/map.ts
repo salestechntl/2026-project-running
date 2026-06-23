@@ -1,4 +1,6 @@
-export type EntryStatus = "submitted" | "rejected";
+import type { EntryStatus } from "./status.js";
+
+export type { EntryStatus };
 export type RunType = "discipline" | "mission";
 export type WeightPeriod = "start" | "end";
 

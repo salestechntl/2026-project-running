@@ -3,6 +3,13 @@ import { DATA_CHANGED_EVENT, fetchRuns, fetchWeights } from "../entries";
 import type { RunEntry, WeightEntry } from "../store";
 import { holdLoading } from "./loading";
 
+type FetchOptions = { silent?: boolean };
+
+type UseEntriesOptions = {
+  /** ฟัง DATA_CHANGED_EVENT แล้ว refresh อัตโนมัติ (ปิดในหน้า Admin ที่อัปเดตแบบ optimistic) */
+  listenChanges?: boolean;
+};
+
 /** นับรายการวิ่ง + น้ำหนักที่หัวหน้าขอให้แก้ไข */
 export function countRejectedEntries(runs: RunEntry[], weights: WeightEntry[]): number {
   return (
@@ -45,75 +52,117 @@ export function useRejectedEntryCount(employeeId: string | undefined): number {
   return count;
 }
 
-export function useRuns(employeeId: string | undefined) {
+export function useRuns(employeeId: string | undefined, options?: UseEntriesOptions) {
+  const listenChanges = options?.listenChanges !== false;
   const [runs, setRuns] = useState<RunEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
-    if (!employeeId) {
-      setRuns([]);
-      setLoading(false);
-      return;
-    }
+  useEffect(() => {
+    setRuns([]);
     setLoading(true);
-    const startedAt = Date.now();
-    try {
-      setRuns(await fetchRuns(employeeId));
-    } catch (e) {
-      console.error("useRuns:", e);
-      setRuns([]);
-    } finally {
-      await holdLoading(startedAt);
-      setLoading(false);
-    }
   }, [employeeId]);
+
+  const refresh = useCallback(
+    async (fetchOptions?: FetchOptions) => {
+      if (!employeeId) {
+        setRuns([]);
+        setLoading(false);
+        return;
+      }
+      const silent = fetchOptions?.silent === true;
+      if (!silent) setLoading(true);
+      const startedAt = Date.now();
+      try {
+        setRuns(await fetchRuns(employeeId));
+      } catch (e) {
+        console.error("useRuns:", e);
+        if (!silent) setRuns([]);
+      } finally {
+        if (!silent) {
+          await holdLoading(startedAt);
+          setLoading(false);
+        }
+      }
+    },
+    [employeeId],
+  );
+
+  const patchRun = useCallback((id: string, patch: Partial<RunEntry>) => {
+    setRuns((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, ...patch, updatedAt: patch.updatedAt ?? Date.now() } : r)),
+    );
+  }, []);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
   useEffect(() => {
-    const onChange = () => void refresh();
+    if (!listenChanges) return;
+    const onChange = () => void refresh({ silent: true });
     window.addEventListener(DATA_CHANGED_EVENT, onChange);
     return () => window.removeEventListener(DATA_CHANGED_EVENT, onChange);
-  }, [refresh]);
+  }, [refresh, listenChanges]);
 
-  return { runs, loading, refresh };
+  return { runs, loading, refresh, patchRun };
 }
 
-export function useWeights(employeeId: string | undefined, month?: string) {
+export function useWeights(
+  employeeId: string | undefined,
+  month?: string,
+  options?: UseEntriesOptions,
+) {
+  const listenChanges = options?.listenChanges !== false;
   const [weights, setWeights] = useState<WeightEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
-    if (!employeeId) {
-      setWeights([]);
-      setLoading(false);
-      return;
-    }
+  useEffect(() => {
+    setWeights([]);
     setLoading(true);
-    const startedAt = Date.now();
-    try {
-      const rows = await fetchWeights(employeeId);
-      setWeights(month ? rows.filter((w) => w.month === month) : rows);
-    } catch (e) {
-      console.error("useWeights:", e);
-      setWeights([]);
-    } finally {
-      await holdLoading(startedAt);
-      setLoading(false);
-    }
   }, [employeeId, month]);
+
+  const refresh = useCallback(
+    async (fetchOptions?: FetchOptions) => {
+      if (!employeeId) {
+        setWeights([]);
+        setLoading(false);
+        return;
+      }
+      const silent = fetchOptions?.silent === true;
+      if (!silent) setLoading(true);
+      const startedAt = Date.now();
+      try {
+        const rows = await fetchWeights(employeeId);
+        setWeights(month ? rows.filter((w) => w.month === month) : rows);
+      } catch (e) {
+        console.error("useWeights:", e);
+        if (!silent) setWeights([]);
+      } finally {
+        if (!silent) {
+          await holdLoading(startedAt);
+          setLoading(false);
+        }
+      }
+    },
+    [employeeId, month],
+  );
+
+  const patchWeight = useCallback((id: string, patch: Partial<WeightEntry>) => {
+    setWeights((prev) =>
+      prev.map((w) => (w.id === id ? { ...w, ...patch, updatedAt: patch.updatedAt ?? Date.now() } : w)),
+    );
+  }, []);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
   useEffect(() => {
-    const onChange = () => void refresh();
+    if (!listenChanges) return;
+    const onChange = () => void refresh({ silent: true });
     window.addEventListener(DATA_CHANGED_EVENT, onChange);
     return () => window.removeEventListener(DATA_CHANGED_EVENT, onChange);
-  }, [refresh]);
+  }, [refresh, listenChanges]);
 
-  return { weights, loading, refresh };
+  return { weights, loading, refresh, patchWeight };
 }

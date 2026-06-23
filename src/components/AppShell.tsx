@@ -9,11 +9,11 @@ export interface NavItem {
   label: string;
   short?: string;
   icon?: ComponentType<{ className?: string }>;
-  /** จำนวนรายการใหม่ — แสดงเป็นวงกลมสีส้ม */
+  /** จำนวนรายการใหม่ — แสดงเป็นวงกลมสีน้ำเงิน */
   badge?: number;
 }
 
-/** วงกลมสีส้มแจ้งจำนวนรายการใหม่ */
+/** วงกลมแจ้งจำนวนรายการใหม่ */
 function NotifDot({ count, className }: { count: number; className?: string }) {
   if (!count) return null;
   return (
@@ -38,7 +38,7 @@ function Brand() {
         <span className="block font-display text-[15px] font-extrabold tracking-tight text-foreground">
           Running Camp
         </span>
-        <span className="block text-[11px] font-semibold tracking-wide text-primary">2026</span>
+        <span className="block text-[11px] font-bold tracking-wide text-accent">2026</span>
       </span>
     </Link>
   );
@@ -51,7 +51,7 @@ export function AppShell({ children, nav }: { children: ReactNode; nav?: NavItem
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <header className="sticky top-0 z-40 border-b border-border/80 bg-background/80 backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b border-border/70 bg-card/95 shadow-sm backdrop-blur-md">
         <div className="container flex h-16 items-center justify-between gap-4">
           <Brand />
 
@@ -65,10 +65,10 @@ export function AppShell({ children, nav }: { children: ReactNode; nav?: NavItem
                   end={n.to === "/app"}
                   className={({ isActive }) =>
                     cn(
-                      "flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                      "flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-medium transition-colors",
                       isActive
-                        ? "bg-muted text-foreground"
-                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                        ? "bg-primary/10 font-semibold text-primary"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
                     )
                   }
                 >
@@ -111,8 +111,8 @@ export function AppShell({ children, nav }: { children: ReactNode; nav?: NavItem
       {/* extra bottom padding on mobile so content clears the tab bar */}
       <main className={cn("container flex-1 py-8 md:py-10", hasNav && "pb-24 md:pb-10")}>{children}</main>
 
-      <footer className="hidden border-t border-border/70 py-6 md:block">
-        <div className="container flex flex-col items-center justify-between gap-2 text-xs text-muted-foreground sm:flex-row">
+      <footer className="hidden bg-ink py-8 text-ink-foreground md:block">
+        <div className="container flex flex-col items-center justify-between gap-2 text-xs text-ink-foreground/75 sm:flex-row">
           <p>Running Camp 2026 — โครงการส่งเสริมสุขภาพพนักงาน</p>
           <p>ข้อมูลถูกบันทึกอย่างปลอดภัย</p>
         </div>
@@ -121,7 +121,7 @@ export function AppShell({ children, nav }: { children: ReactNode; nav?: NavItem
       {/* Mobile bottom tab bar */}
       {hasNav && (
         <nav
-          className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_12px_rgba(17,17,26,0.06)] backdrop-blur-md md:hidden"
+          className="fixed inset-x-0 bottom-0 z-50 border-t border-border/80 bg-card/98 pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_20px_rgba(0,38,100,0.08)] backdrop-blur-md md:hidden"
           aria-label="เมนูหลัก"
         >
           <div className="mx-auto flex max-w-md items-stretch">

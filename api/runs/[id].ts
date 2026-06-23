@@ -3,6 +3,7 @@ import { requireAuth } from "../_lib/auth/require.js";
 import { createAdminClient, isSupabaseConfigured } from "../_lib/supabase/admin.js";
 import { canAccessEmployee } from "../_lib/team/access.js";
 import { mapRun, validateImageSlots, type DbRunRow } from "../_lib/entries/map.js";
+import { canLeadApprove, canLeadReject } from "../_lib/entries/status.js";
 import { attachRunImages } from "../_lib/entries/attach-run-images.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -34,6 +35,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === "DELETE") {
       if (row.employee_id !== auth.sub) {
         return res.status(403).json({ error: "ลบได้เฉพาะรายการของตนเอง" });
+      }
+      if (row.status !== "pending") {
+        return res.status(400).json({ error: "ลบได้เฉพาะรายการที่รออนุมัติ" });
       }
 
       const { error } = await supabase.from("run_entries").delete().eq("id", id);
@@ -86,34 +90,77 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!allowed) return res.status(403).json({ error: "ไม่มีสิทธิ์จัดการรายการนี้" });
 
       const status = req.body?.status;
-      if (status !== "submitted" && status !== "rejected") {
+      if (status !== "approved" && status !== "rejected") {
         return res.status(400).json({ error: "สถานะไม่ถูกต้อง" });
       }
 
-      const rejectNote = status === "rejected" ? String(req.body?.rejectNote ?? "").trim() || null : null;
+      if (status === "approved") {
+        if (!canLeadApprove(row.status)) {
+          return res.status(400).json({ error: "อนุมัติได้เฉพาะรายการที่รออนุมัติ" });
+        }
+
+        const nowIso = new Date().toISOString();
+        const { data: updated, error: updateError } = await supabase
+          .from("run_entries")
+          .update({
+            status: "approved",
+            reject_note: null,
+            rejected_by: null,
+            approved_by: auth.sub,
+            approved_at: nowIso,
+          })
+          .eq("id", id)
+          .select("*")
+          .single();
+
+        if (updateError) {
+          console.error("run approve error:", updateError);
+          return res.status(500).json({ error: "ไม่สามารถอนุมัติรายการได้" });
+        }
+
+        await supabase.from("audit_log").insert({
+          actor_id: auth.sub,
+          action: "run.approve",
+          target_type: "run",
+          target_id: id,
+        });
+
+        return res.status(200).json({ run: mapRun(updated as DbRunRow) });
+      }
+
+      if (!canLeadReject(row.status)) {
+        return res.status(400).json({ error: "ไม่สามารถปฏิเสธรายการนี้ได้" });
+      }
+
+      const rejectNote = String(req.body?.rejectNote ?? "").trim();
+      if (!rejectNote) {
+        return res.status(400).json({ error: "กรุณาระบุเหตุผลที่ไม่ผ่าน" });
+      }
 
       const { data: updated, error: updateError } = await supabase
         .from("run_entries")
         .update({
-          status,
+          status: "rejected",
           reject_note: rejectNote,
-          rejected_by: status === "rejected" ? auth.sub : null,
+          rejected_by: auth.sub,
+          approved_by: null,
+          approved_at: null,
         })
         .eq("id", id)
         .select("*")
         .single();
 
       if (updateError) {
-        console.error("run status error:", updateError);
+        console.error("run reject error:", updateError);
         return res.status(500).json({ error: "ไม่สามารถอัปเดตสถานะได้" });
       }
 
       await supabase.from("audit_log").insert({
         actor_id: auth.sub,
-        action: status === "rejected" ? "run.reject" : "run.restore",
+        action: "run.reject",
         target_type: "run",
         target_id: id,
-        metadata: rejectNote ? { reject_note: rejectNote } : null,
+        metadata: { reject_note: rejectNote },
       });
 
       return res.status(200).json({ run: mapRun(updated as DbRunRow) });

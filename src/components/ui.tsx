@@ -8,16 +8,16 @@ type Size = "sm" | "md" | "lg";
 
 const variants: Record<Variant, string> = {
   primary:
-    "bg-primary text-primary-foreground shadow-sm hover:brightness-[1.05] active:brightness-95 hover:shadow-glow",
-  secondary: "bg-ink text-ink-foreground hover:bg-ink/90 active:bg-ink shadow-sm",
-  outline: "border border-input bg-card hover:bg-muted text-foreground",
+    "bg-primary text-primary-foreground shadow-sm hover:bg-[hsl(227_82%_48%)] active:bg-[hsl(227_82%_44%)] hover:shadow-glow",
+  secondary: "bg-ink text-ink-foreground hover:bg-[hsl(231_100%_20%)] active:bg-ink shadow-sm",
+  outline: "border border-primary/25 bg-card text-primary hover:bg-primary/5 hover:border-primary/40",
   ghost: "hover:bg-muted text-foreground",
   danger: "bg-danger text-white hover:brightness-105 active:brightness-95",
 };
 const sizes: Record<Size, string> = {
-  sm: "h-9 px-3 text-sm gap-1.5 rounded-md",
-  md: "h-11 px-5 text-sm gap-2 rounded-lg",
-  lg: "h-12 px-6 text-base gap-2 rounded-lg",
+  sm: "h-9 px-3 text-sm gap-1.5 rounded-lg",
+  md: "h-11 px-5 text-sm gap-2 rounded-xl",
+  lg: "h-12 px-6 text-base gap-2 rounded-xl",
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -44,7 +44,7 @@ Button.displayName = "Button";
 /* ---------------- Card ---------------- */
 export function Card({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <div className={cn("rounded-lg border border-border bg-card shadow-sm", className)}>{children}</div>
+    <div className={cn("rounded-xl border border-border/80 bg-card shadow-sm", className)}>{children}</div>
   );
 }
 
@@ -88,7 +88,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
     <input
       ref={ref}
       className={cn(
-        "h-11 w-full rounded-lg border border-input bg-card px-3.5 text-[15px] text-foreground shadow-xs transition-colors",
+        "h-11 w-full rounded-xl border border-input bg-card px-3.5 text-[15px] text-foreground shadow-xs transition-colors",
         "placeholder:text-muted-foreground/70",
         "focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25",
         "disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground",
@@ -107,7 +107,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
       <select
         ref={ref}
         className={cn(
-          "h-11 w-full appearance-none rounded-lg border border-input bg-card pl-3.5 pr-10 text-[15px] text-foreground shadow-xs transition-colors",
+          "h-11 w-full appearance-none rounded-xl border border-input bg-card pl-3.5 pr-10 text-[15px] text-foreground shadow-xs transition-colors",
           "focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25",
           "disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground",
           className,
@@ -130,12 +130,13 @@ Select.displayName = "Select";
 /* ---------------- Badge ---------------- */
 const badgeTones = {
   neutral: "bg-muted text-muted-foreground",
-  accent: "bg-primary/10 text-primary",
+  accent: "bg-primary/12 text-primary",
+  gold: "bg-accent/15 text-[hsl(38_90%_38%)]",
   success: "bg-success/12 text-success",
   warning: "bg-warning/15 text-[hsl(32_80%_38%)]",
   danger: "bg-danger text-white",
   ink: "bg-ink/10 text-ink",
-  info: "bg-[hsl(211_100%_94%)] text-[hsl(211_85%_42%)]",
+  info: "bg-primary/8 text-primary",
 } as const;
 
 export function Badge({
@@ -269,14 +270,17 @@ export function LoadingBlock({
 /* ---------------- Stat ---------------- */
 export function Stat({ label, value, unit }: { label: string; value: string; unit?: string }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-3 shadow-xs sm:p-4">
-      <p className="truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">
-        {label}
-      </p>
-      <p className="mt-1 flex items-baseline gap-1">
-        <span className="tnum text-xl font-bold text-foreground sm:text-2xl">{value}</span>
-        {unit && <span className="text-xs text-muted-foreground sm:text-sm">{unit}</span>}
-      </p>
+    <div className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-xs">
+      <div className="h-1 bg-primary" />
+      <div className="p-3 sm:p-4">
+        <p className="truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">
+          {label}
+        </p>
+        <p className="mt-1 flex items-baseline gap-1">
+          <span className="tnum text-xl font-bold text-foreground sm:text-2xl">{value}</span>
+          {unit && <span className="text-xs text-muted-foreground sm:text-sm">{unit}</span>}
+        </p>
+      </div>
     </div>
   );
 }

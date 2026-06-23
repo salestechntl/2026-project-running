@@ -8,7 +8,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import {
   MONTHLY_MISSIONS, currentMonthKey, todayISOEffective, monthOf, isMonthUnlocked,
-  isCurrentMonth, missionName, monthLabel, monthLabelEN,
+  missionName, monthLabel, monthLabelEN,
   weightWindow, END_WEIGHT_GRACE_DAYS, runDateSelectionBounds,
   weightMonthOptions, weightMonthFieldHint,
 } from "@/lib/missions";
@@ -19,8 +19,9 @@ import { SaveProgressDialog } from "@/components/SaveProgressDialog";
 import { DATA_CHANGED_EVENT } from "@/lib/store";
 import {
   deleteRunEntry,
+  ENTRY_STATUS_LABEL,
   RUN_TYPE_LABEL,
-  type RunEntry, type RunType, type WeightPeriod, type WeightEntry,
+  type RunEntry, type RunType, type WeightPeriod, type WeightEntry, type EntryStatus,
 } from "@/lib/entries";
 import { useRuns, useWeights } from "@/lib/hooks/useEntries";
 import { pad2, formatThaiDate, formatDurationThai, formatThaiDateTime } from "@/lib/utils";
@@ -40,9 +41,25 @@ function runDateFieldHint(min: string, max: string): string {
     : `เลือกได้ตั้งแต่ ${formatThaiDate(min)} ถึงวันนี้`;
 }
 
-/** เจ้าตัวแก้รายการนี้ได้ไหม: ภายในเดือนปัจจุบัน หรือถูกหัวหน้าตีกลับ */
-function canOwnerEdit(month: string, status: string) {
-  return isCurrentMonth(month) || status === "rejected";
+/** เจ้าตัวแก้รายการนี้ได้ไหม */
+function canOwnerEditRun(status: EntryStatus, isLead: boolean) {
+  if (status === "rejected") return false;
+  if (status === "pending") return true;
+  return isLead;
+}
+
+function canOwnerDeleteRun(status: EntryStatus) {
+  return status === "pending";
+}
+
+function entryStatusBadge(status: EntryStatus) {
+  if (status === "pending") {
+    return <Badge tone="warning"><AlertTriangle className="h-3 w-3" /> {ENTRY_STATUS_LABEL.pending}</Badge>;
+  }
+  if (status === "approved") {
+    return <Badge tone="success"><CheckCircle2 className="h-3 w-3" /> {ENTRY_STATUS_LABEL.approved}</Badge>;
+  }
+  return <Badge tone="danger"><AlertTriangle className="h-3 w-3" /> {ENTRY_STATUS_LABEL.rejected}</Badge>;
 }
 
 function SuccessBanner({ children }: { children: ReactNode }) {
@@ -82,7 +99,7 @@ export default function LogEntry() {
         <SuccessBanner>{toast}</SuccessBanner>
       )}
 
-      <div className="inline-flex w-full rounded-lg border border-border bg-muted/60 p-1 sm:w-auto">
+      <div className="inline-flex w-full rounded-xl border border-border/80 bg-muted/50 p-1 sm:w-auto">
         {[
           { id: "run" as Tab, label: "การวิ่ง", icon: Footprints },
           { id: "weight" as Tab, label: "น้ำหนัก", icon: Scale },
@@ -91,7 +108,7 @@ export default function LogEntry() {
             key={t.id}
             onClick={() => setTab(t.id)}
             className={cn(
-              "inline-flex flex-1 items-center justify-center gap-2 rounded-md px-5 py-2 text-sm font-semibold transition-all sm:flex-none",
+              "inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-all sm:flex-none",
               tab === t.id
                 ? "bg-primary text-primary-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
@@ -116,8 +133,8 @@ export default function LogEntry() {
 function MissionTimeline() {
   const cur = currentMonthKey();
   return (
-    <Card className="overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-border px-5 py-3.5">
+    <Card className="overflow-hidden rounded-2xl border-primary/15">
+      <div className="flex items-center gap-2 border-b border-border/80 bg-primary/[0.04] px-5 py-3.5">
         <Target className="h-4 w-4 text-primary" />
         <h3 className="text-sm font-semibold text-foreground">ภารกิจประจำเดือน — Running Camp 2026</h3>
       </div>
@@ -149,7 +166,7 @@ function MissionTimeline() {
                   <span className="text-sm">เผยภารกิจเมื่อถึงเดือนนี้</span>
                 </div>
               )}
-              {current && <Badge tone="accent">เดือนนี้</Badge>}
+              {current && <Badge tone="gold">เดือนนี้</Badge>}
             </li>
           );
         })}
@@ -474,8 +491,8 @@ const RunHistory = forwardRef(function RunHistory(
       </h2>
       <Card className="divide-y divide-border overflow-hidden">
         {runs.map((r) => {
-          const month = monthOf(r.date);
-          const editable = isLead || canOwnerEdit(month, r.status);
+          const editable = canOwnerEditRun(r.status, isLead);
+          const deletable = canOwnerDeleteRun(r.status);
           return (
             <div key={r.id} className="p-4">
               <div className="flex items-start gap-3">
@@ -487,9 +504,7 @@ const RunHistory = forwardRef(function RunHistory(
                         ? missionName(r.missionTag)
                         : RUN_TYPE_LABEL[r.runType]}
                     </Badge>
-                    {r.status === "rejected" && (
-                      <Badge tone="danger"><AlertTriangle className="h-3 w-3" /> ขอให้แก้ไข</Badge>
-                    )}
+                    {entryStatusBadge(r.status)}
                   </div>
                   <p className="tnum mt-0.5 text-xs text-muted-foreground">
                     {r.distanceKm.toFixed(2)} กม. · {formatDurationThai(r.durationSec)}
@@ -509,6 +524,7 @@ const RunHistory = forwardRef(function RunHistory(
                       >
                         <Pencil className="h-4 w-4" />
                       </button>
+                      {deletable && (
                       <button
                         onClick={() => setConfirmId(r.id)}
                         className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-danger"
@@ -516,11 +532,16 @@ const RunHistory = forwardRef(function RunHistory(
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
+                      )}
                     </>
                   ) : (
                     <span
                       className="inline-flex h-9 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground"
-                      title="เดือนที่ผ่านมา — ให้หัวหน้ากดขอให้แก้ไขก่อน"
+                      title={
+                        r.status === "rejected"
+                          ? "รายการไม่ผ่าน — ส่งรายการใหม่แทนการแก้ไข"
+                          : "อนุมัติแล้ว — แก้ไขไม่ได้"
+                      }
                     >
                       <Lock className="h-3.5 w-3.5" /> ล็อก
                     </span>
@@ -640,9 +661,9 @@ function WeightTab({ onSaved }: { onSaved: (p: WeightPeriod) => void }) {
         >
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
           <div>
-            <p className="font-semibold">หัวหน้าขอให้แก้ไขน้ำหนัก {rejectedCount} รายการ</p>
+            <p className="font-semibold">มีรายการน้ำหนักที่ไม่ผ่าน {rejectedCount} รายการ</p>
             <p className="mt-0.5 text-xs opacity-90">
-              เลือกเดือนที่ถูกต้องด้านล่าง หรือกดแก้ไขจากประวัติการบันทึกของฉัน
+              กรุณาส่งรายการใหม่ในช่วงเวลาที่เปิดรับ — เลือกเดือนด้านล่างหรือกดส่งใหม่จากประวัติ
             </p>
           </div>
         </div>
@@ -676,11 +697,11 @@ function WeightTab({ onSaved }: { onSaved: (p: WeightPeriod) => void }) {
             className="scroll-mt-28"
           >
             <WeightCard
-              key={`${month}-${period}-${existing.find((w) => w.period === period)?.id ?? "new"}-${existing.find((w) => w.period === period)?.updatedAt ?? 0}`}
+              key={`${month}-${period}-${existing.find((w) => w.period === period && w.status === "pending")?.id ?? "new"}-${existing.find((w) => w.period === period && w.status === "pending")?.updatedAt ?? 0}`}
               employeeId={user.id}
               month={month}
               period={period}
-              initial={existing.find((w) => w.period === period)}
+              initial={existing.find((w) => w.period === period && w.status === "pending")}
               onSaved={() => {
                 void refresh();
                 onSaved(period);
@@ -743,18 +764,14 @@ const WeightHistory = forwardRef(function WeightHistory(
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-semibold text-foreground">{monthLabel(w.month)}</span>
                   <Badge tone="neutral">{WEIGHT_PERIOD_LABEL[w.period]}</Badge>
-                  {w.status === "rejected" ? (
-                    <Badge tone="danger"><AlertTriangle className="h-3 w-3" /> ขอให้แก้ไข</Badge>
-                  ) : (
-                    <Badge tone="success"><CheckCircle2 className="h-3 w-3" /> บันทึกแล้ว</Badge>
-                  )}
+                  {entryStatusBadge(w.status)}
                 </div>
                 <p className="tnum mt-0.5 text-xs text-muted-foreground">{w.weightKg.toFixed(1)} กก.</p>
                 <p className="tnum mt-0.5 text-xs text-muted-foreground/80">
                   อัปเดตล่าสุด {formatThaiDateTime(w.updatedAt)}
                 </p>
               </div>
-              {(w.status === "rejected" || weightWindow(w.month, w.period).open) && (
+              {w.status === "pending" && (
                 <button
                   type="button"
                   onClick={() => onEdit(w)}
@@ -762,6 +779,16 @@ const WeightHistory = forwardRef(function WeightHistory(
                 >
                   <Pencil className="h-3.5 w-3.5" />
                   แก้ไข
+                </button>
+              )}
+              {w.status === "rejected" && weightWindow(w.month, w.period).open && (
+                <button
+                  type="button"
+                  onClick={() => onEdit(w)}
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-primary/30 bg-primary/5 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  ส่งใหม่
                 </button>
               )}
             </div>
@@ -801,8 +828,7 @@ function WeightCard({
   const [progressError, setProgressError] = useState<string>();
 
   const label = period === "start" ? "ต้นเดือน" : "สิ้นเดือน";
-  const saved = !!initial;
-  const status = initial?.status ?? "submitted";
+  const isPending = initial?.status === "pending";
 
   useEffect(() => {
     if (initial) {
@@ -810,15 +836,16 @@ function WeightCard({
       setImage(initial.proofImage);
       setImageRef(initial.proofImageRef);
       setError(undefined);
+    } else {
+      setWeight("");
+      setImage(undefined);
+      setImageRef(undefined);
+      setError(undefined);
     }
-  }, [initial?.id, initial?.updatedAt, initial?.weightKg, initial?.proofImage, initial?.proofImageRef]);
+  }, [initial?.id, initial?.updatedAt, initial?.weightKg, initial?.proofImage, initial?.proofImageRef, initial]);
 
-  // หน้าต่างเวลากรอก: ต้นเดือน = วันแรกของเดือน, สิ้นเดือน = วันสุดท้ายของเดือน
-  // ทั้งคู่ปิดรับ 7 วันหลังสิ้นเดือน · ถ้าถูกหัวหน้าตีกลับ ให้แก้ไขได้เสมอ
-  // หัวหน้าทีม (ผู้บันทึกที่เป็น lead) แก้ไขได้ตลอดเวลา ไม่ล็อก
   const win = weightWindow(month, period);
-  const editable = isLead || status === "rejected" || win.open;
-  // ยังไม่ถึง/เลย period ที่กรอกได้ → disable ทั้ง section
+  const editable = isLead ? win.open : win.open && (isPending || !initial);
   const disabled = !editable;
 
   function patchProgress(stepId: WeightSaveStepId, status: SaveStepStatus, detail?: string) {
@@ -863,6 +890,7 @@ function WeightCard({
     try {
       await saveWeightEntryWithProgress(
         {
+          id: isPending ? initial?.id : undefined,
           employeeId,
           month,
           period,
@@ -871,7 +899,7 @@ function WeightCard({
           proofImageRef: imageRef,
         },
         patchProgress,
-        { isUpdate: saved },
+        { isUpdate: isPending },
       );
       window.dispatchEvent(new Event(DATA_CHANGED_EVENT));
       setTimeout(() => {
@@ -895,21 +923,12 @@ function WeightCard({
           </span>
           <h3 className="font-semibold text-foreground">น้ำหนัก{label}</h3>
         </div>
-        {initial?.status === "rejected" ? (
-          <Badge tone="danger"><AlertTriangle className="h-3 w-3" /> ขอให้แก้ไข</Badge>
-        ) : saved ? (
-          <Badge tone="success"><CheckCircle2 className="h-3 w-3" /> บันทึกแล้ว</Badge>
+        {isPending ? (
+          <Badge tone="warning"><AlertTriangle className="h-3 w-3" /> {ENTRY_STATUS_LABEL.pending}</Badge>
         ) : null}
       </div>
 
-      {status === "rejected" ? (
-        <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-[hsl(32_80%_34%)]">
-          <p className="flex items-center gap-1.5 font-semibold">
-            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-            หัวหน้าขอให้แก้ไข — กรุณาอัปเดตน้ำหนักและภาพด้านล่าง
-          </p>
-        </div>
-      ) : disabled ? (
+      {disabled ? (
         todayISOEffective() < win.opensISO ? (
           <p className="flex items-start gap-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
             <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -920,7 +939,7 @@ function WeightCard({
             <p className="flex items-center gap-1.5 font-semibold">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> เลยกำหนดแล้ว
             </p>
-            <p className="mt-0.5 pl-5">ปิดรับน้ำหนัก{label}เมื่อ {formatThaiDate(win.closesISO)} — หากต้องการแก้ไข ให้หัวหน้ากด “ขอให้แก้ไข” ก่อน</p>
+            <p className="mt-0.5 pl-5">ปิดรับน้ำหนัก{label}เมื่อ {formatThaiDate(win.closesISO)}</p>
           </div>
         )
       ) : win.backdated ? (
@@ -941,11 +960,6 @@ function WeightCard({
               ? `กรอกน้ำหนักต้นเดือนได้ตั้งแต่วันแรกของเดือน และไม่เกิน ${END_WEIGHT_GRACE_DAYS} วันหลังจบเดือน`
               : `กรอกน้ำหนักสิ้นเดือนได้ตั้งแต่วันสุดท้ายของเดือน และไม่เกิน ${END_WEIGHT_GRACE_DAYS} วันหลังจบเดือน`}
           </span>
-        </p>
-      )}
-      {initial?.status === "rejected" && initial.rejectNote && (
-        <p className="rounded-md bg-warning/10 px-3 py-2 text-xs text-[hsl(32_80%_34%)]">
-          เหตุผลจากหัวหน้า: {initial.rejectNote}
         </p>
       )}
       <fieldset
@@ -974,21 +988,15 @@ function WeightCard({
           }}
           disabled={disabled}
         />
-        <Button onClick={submit} variant={saved ? "outline" : "primary"} disabled={saving || disabled} className="mt-auto">
-          {saving ? "กำลังบันทึก…" : disabled ? "ยังกรอกไม่ได้" : status === "rejected" ? "บันทึกการแก้ไข" : saved ? "อัปเดต" : "บันทึก"}
+        <Button onClick={submit} variant={isPending ? "outline" : "primary"} disabled={saving || disabled} className="mt-auto">
+          {saving ? "กำลังบันทึก…" : disabled ? "ยังกรอกไม่ได้" : isPending ? "อัปเดต" : "บันทึก"}
         </Button>
       </fieldset>
     </Card>
 
     <SaveProgressDialog
       open={progressOpen}
-      title={
-        status === "rejected"
-          ? `กำลังบันทึกการแก้ไขน้ำหนัก${label}`
-          : saved
-            ? `กำลังอัปเดตน้ำหนัก${label}`
-            : `กำลังบันทึกน้ำหนัก${label}`
-      }
+      title={isPending ? `กำลังอัปเดตน้ำหนัก${label}` : `กำลังบันทึกน้ำหนัก${label}`}
       steps={progressSteps}
       errorMessage={progressError}
       onClose={closeProgress}

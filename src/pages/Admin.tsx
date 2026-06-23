@@ -1,14 +1,14 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Image as ImageIcon, Images, Footprints, Scale, ChevronRight, ChevronLeft, Inbox, X,
-  CheckCircle2, AlertTriangle, Undo2,
+  CheckCircle2, AlertTriangle, Clock, Loader2,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { missionName } from "@/lib/missions";
 import {
   setRunEntryStatus, setWeightEntryStatus,
-  countNewForMember, markMemberSeen, fetchRuns,
-  DATA_CHANGED_EVENT, RUN_TYPE_LABEL,
+  fetchRuns, fetchWeights,
+  RUN_TYPE_LABEL, ENTRY_STATUS_LABEL,
   type RunEntry, type WeightEntry, type EntryStatus,
 } from "@/lib/entries";
 import { useRuns, useWeights } from "@/lib/hooks/useEntries";
@@ -23,7 +23,7 @@ export default function Admin() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [gallery, setGallery] = useState<{ images: string[]; index: number } | null>(null);
   const [runCounts, setRunCounts] = useState<Record<string, number>>({});
-  const [freshCounts, setFreshCounts] = useState<Record<string, number>>({});
+  const [pendingCounts, setPendingCounts] = useState<Record<string, number>>({});
   const [countsLoading, setCountsLoading] = useState(false);
   const openGallery = (images: string[]) => images.length > 0 && setGallery({ images, index: 0 });
 
@@ -32,13 +32,58 @@ export default function Admin() {
   }, [team, selectedId]);
 
   const selected = team.find((t) => t.id === selectedId);
-  const { runs, loading: runsLoading, refresh: refreshRuns } = useRuns(selected?.id);
-  const { weights, loading: weightsLoading, refresh: refreshWeights } = useWeights(selected?.id);
-  const entriesLoading = !!selected && (runsLoading || weightsLoading);
-  const bump = () => {
-    void refreshRuns();
-    void refreshWeights();
-  };
+  const adminFetchOpts = { listenChanges: false } as const;
+  const { runs, loading: runsLoading, patchRun } = useRuns(selected?.id, adminFetchOpts);
+  const { weights, loading: weightsLoading, patchWeight } = useWeights(selected?.id, undefined, adminFetchOpts);
+  const runsInitialLoading = !!selected && runsLoading && runs.length === 0;
+  const weightsInitialLoading = !!selected && weightsLoading && weights.length === 0;
+
+  const bumpPending = useCallback((memberId: string, delta: number) => {
+    setPendingCounts((prev) => ({
+      ...prev,
+      [memberId]: Math.max(0, (prev[memberId] ?? 0) + delta),
+    }));
+  }, []);
+
+  const applyRunStatus = useCallback(
+    async (run: RunEntry, status: EntryStatus, rejectNote?: string) => {
+      const wasPending = run.status === "pending";
+      const snapshot = { status: run.status, rejectNote: run.rejectNote };
+      patchRun(run.id, {
+        status,
+        rejectNote: status === "rejected" ? rejectNote : undefined,
+      });
+      if (wasPending) bumpPending(run.employeeId, -1);
+      try {
+        await setRunEntryStatus(run.id, status, rejectNote);
+      } catch (e) {
+        patchRun(run.id, snapshot);
+        if (wasPending) bumpPending(run.employeeId, 1);
+        throw e;
+      }
+    },
+    [patchRun, bumpPending],
+  );
+
+  const applyWeightStatus = useCallback(
+    async (weight: WeightEntry, status: EntryStatus, rejectNote?: string) => {
+      const wasPending = weight.status === "pending";
+      const snapshot = { status: weight.status, rejectNote: weight.rejectNote };
+      patchWeight(weight.id, {
+        status,
+        rejectNote: status === "rejected" ? rejectNote : undefined,
+      });
+      if (wasPending) bumpPending(weight.employeeId, -1);
+      try {
+        await setWeightEntryStatus(weight.id, status, rejectNote);
+      } catch (e) {
+        patchWeight(weight.id, snapshot);
+        if (wasPending) bumpPending(weight.employeeId, 1);
+        throw e;
+      }
+    },
+    [patchWeight, bumpPending],
+  );
 
   useEffect(() => {
     if (!user || team.length === 0) {
@@ -49,20 +94,22 @@ export default function Admin() {
     setCountsLoading(true);
     const load = async () => {
       const counts: Record<string, number> = {};
-      const fresh: Record<string, number> = {};
+      const pending: Record<string, number> = {};
       await Promise.all(
         team.map(async (member) => {
-          const [memberRuns, freshCount] = await Promise.all([
+          const [memberRuns, memberWeights] = await Promise.all([
             fetchRuns(member.id),
-            countNewForMember(user.id, member.id),
+            fetchWeights(member.id),
           ]);
           counts[member.id] = memberRuns.length;
-          fresh[member.id] = freshCount;
+          pending[member.id] =
+            memberRuns.filter((r) => r.status === "pending").length +
+            memberWeights.filter((w) => w.status === "pending").length;
         }),
       );
       if (!cancelled) {
         setRunCounts(counts);
-        setFreshCounts(fresh);
+        setPendingCounts(pending);
         setCountsLoading(false);
       }
     };
@@ -73,19 +120,6 @@ export default function Admin() {
     };
   }, [user, team]);
 
-  useEffect(() => {
-    if (!user || !selectedId) return;
-    void markMemberSeen(user.id, selectedId).then(() => {
-      setFreshCounts((prev) => ({ ...prev, [selectedId]: 0 }));
-    });
-  }, [user?.id, selectedId]);
-
-  useEffect(() => {
-    const onChange = () => bump();
-    window.addEventListener(DATA_CHANGED_EVENT, onChange);
-    return () => window.removeEventListener(DATA_CHANGED_EVENT, onChange);
-  }, [refreshRuns, refreshWeights]);
-
   if (!user) return null;
 
   return (
@@ -93,7 +127,7 @@ export default function Admin() {
       <header className="animate-fade-up">
         <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">ข้อมูลทีมของฉัน</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          ตรวจสอบรายการที่ลูกทีมบันทึก — กด “ขอให้แก้ไข” เพื่อเปิดสิทธิ์ให้เจ้าตัวกลับไปแก้รายการย้อนหลังได้
+          ตรวจสอบรายการที่ลูกทีมบันทึก — อนุมัติหรือปฏิเสธพร้อมระบุเหตุผล
         </p>
       </header>
 
@@ -110,7 +144,7 @@ export default function Admin() {
           ) : (
           team.map((member) => {
             const count = runCounts[member.id] ?? 0;
-            const fresh = freshCounts[member.id] ?? 0;
+            const pending = pendingCounts[member.id] ?? 0;
             const active = member.id === selectedId;
             return (
               <button
@@ -133,12 +167,12 @@ export default function Admin() {
                     รหัส {member.id} · {countsLoading ? "…" : `${count} กิจกรรม`}
                   </span>
                 </span>
-                {fresh > 0 && (
+                {pending > 0 && (
                   <span
                     className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground shadow-sm"
-                    title="มีรายการใหม่/อัปเดตที่ยังไม่ได้เปิดดู"
+                    title="รายการรออนุมัติ"
                   >
-                    {fresh}
+                    {pending}
                   </span>
                 )}
                 <ChevronRight className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
@@ -165,7 +199,7 @@ export default function Admin() {
 
               <div>
                 <h3 className="mb-2 text-sm font-semibold text-foreground">รายการวิ่ง</h3>
-                {entriesLoading ? (
+                {runsInitialLoading ? (
                   <Card>
                     <LoadingBlock compact label="กำลังโหลดรายการวิ่ง…" />
                   </Card>
@@ -173,14 +207,16 @@ export default function Admin() {
                   <EmptyState text="ยังไม่มีการบันทึกการวิ่ง" />
                 ) : (
                   <Card className="divide-y divide-border overflow-hidden">
-                    {runs.map((r) => <RunRow key={r.id} run={r} onPreview={openGallery} onChange={bump} />)}
+                    {runs.map((r) => (
+                      <RunRow key={r.id} run={r} onPreview={openGallery} onStatusChange={applyRunStatus} />
+                    ))}
                   </Card>
                 )}
               </div>
 
               <div>
                 <h3 className="mb-2 text-sm font-semibold text-foreground">บันทึกน้ำหนัก</h3>
-                {entriesLoading ? (
+                {weightsInitialLoading ? (
                   <Card>
                     <LoadingBlock compact label="กำลังโหลดน้ำหนัก…" />
                   </Card>
@@ -188,7 +224,9 @@ export default function Admin() {
                   <EmptyState text="ยังไม่มีการบันทึกน้ำหนัก" />
                 ) : (
                   <Card className="divide-y divide-border overflow-hidden">
-                    {weights.map((w) => <WeightRow key={w.id} weight={w} onPreview={openGallery} onChange={bump} />)}
+                    {weights.map((w) => (
+                      <WeightRow key={w.id} weight={w} onPreview={openGallery} onStatusChange={applyWeightStatus} />
+                    ))}
                   </Card>
                 )}
               </div>
@@ -294,44 +332,79 @@ function Gallery({
   );
 }
 
-/* ---------- status controls (reject / restore) ---------- */
+/* ---------- status controls (approve / reject) ---------- */
 function StatusControls({
   status,
+  busy,
+  onApprove,
   onReject,
-  onRestore,
 }: {
   status: EntryStatus;
+  busy?: boolean;
+  onApprove: () => void;
   onReject: () => void;
-  onRestore: () => void;
 }) {
-  if (status === "rejected") {
+  if (status === "pending") {
     return (
-      <div className="flex items-center gap-1.5">
-        <Badge tone="danger"><AlertTriangle className="h-3 w-3" /> ขอให้แก้ไข</Badge>
-        <button
-          onClick={onRestore}
-          className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <Undo2 className="h-3.5 w-3.5" /> ยกเลิก
-        </button>
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
+        <Badge tone="warning"><Clock className="h-3 w-3" /> {ENTRY_STATUS_LABEL.pending}</Badge>
+        <Button size="sm" onClick={onApprove} disabled={busy} className="h-8 px-2.5 text-xs">
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "อนุมัติ"}
+        </Button>
+        <Button size="sm" variant="outline" onClick={onReject} disabled={busy} className="h-8 px-2.5 text-xs">
+          ไม่ผ่าน
+        </Button>
+      </div>
+    );
+  }
+  if (status === "approved") {
+    return (
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
+        <Badge tone="success"><CheckCircle2 className="h-3 w-3" /> {ENTRY_STATUS_LABEL.approved}</Badge>
+        <Button size="sm" variant="outline" onClick={onReject} disabled={busy} className="h-8 px-2.5 text-xs">
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "ไม่ผ่าน"}
+        </Button>
       </div>
     );
   }
   return (
-    <div className="flex items-center gap-1.5">
-      <Badge tone="success"><CheckCircle2 className="h-3 w-3" /> ส่งแล้ว</Badge>
-      <Button size="sm" variant="outline" onClick={onReject} className="h-8 px-2.5 text-xs">
-        ขอให้แก้ไข
-      </Button>
-    </div>
+    <Badge tone="danger"><AlertTriangle className="h-3 w-3" /> {ENTRY_STATUS_LABEL.rejected}</Badge>
   );
 }
 
-function askReason(): string | null {
-  return window.prompt("ระบุสิ่งที่ต้องการให้แก้ไข (ไม่บังคับ)", "") ;
+function askRejectReason(): string | null {
+  const r = window.prompt("ระบุเหตุผลที่ไม่ผ่าน (บังคับ)", "");
+  if (r === null) return null;
+  const trimmed = r.trim();
+  if (!trimmed) {
+    window.alert("กรุณาระบุเหตุผล");
+    return askRejectReason();
+  }
+  return trimmed;
 }
 
-function RunRow({ run, onPreview, onChange }: { run: RunEntry; onPreview: (images: string[]) => void; onChange: () => void }) {
+function RunRow({
+  run,
+  onPreview,
+  onStatusChange,
+}: {
+  run: RunEntry;
+  onPreview: (images: string[]) => void;
+  onStatusChange: (run: RunEntry, status: EntryStatus, rejectNote?: string) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  async function act(action: () => Promise<void>) {
+    setBusy(true);
+    try {
+      await action();
+    } catch {
+      window.alert("บันทึกสถานะไม่สำเร็จ กรุณาลองใหม่");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="p-4">
       <div className="flex items-center gap-4">
@@ -354,15 +427,12 @@ function RunRow({ run, onPreview, onChange }: { run: RunEntry; onPreview: (image
         </div>
         <StatusControls
           status={run.status}
-          onReject={async () => {
-            const r = askReason();
+          busy={busy}
+          onApprove={() => void act(() => onStatusChange(run, "approved"))}
+          onReject={() => {
+            const r = askRejectReason();
             if (r === null) return;
-            await setRunEntryStatus(run.id, "rejected", r || undefined);
-            onChange();
-          }}
-          onRestore={async () => {
-            await setRunEntryStatus(run.id, "submitted");
-            onChange();
+            void act(() => onStatusChange(run, "rejected", r));
           }}
         />
       </div>
@@ -373,7 +443,28 @@ function RunRow({ run, onPreview, onChange }: { run: RunEntry; onPreview: (image
   );
 }
 
-function WeightRow({ weight, onPreview, onChange }: { weight: WeightEntry; onPreview: (images: string[]) => void; onChange: () => void }) {
+function WeightRow({
+  weight,
+  onPreview,
+  onStatusChange,
+}: {
+  weight: WeightEntry;
+  onPreview: (images: string[]) => void;
+  onStatusChange: (weight: WeightEntry, status: EntryStatus, rejectNote?: string) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  async function act(action: () => Promise<void>) {
+    setBusy(true);
+    try {
+      await action();
+    } catch {
+      window.alert("บันทึกสถานะไม่สำเร็จ กรุณาลองใหม่");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="p-4">
       <div className="flex items-center gap-4">
@@ -390,15 +481,12 @@ function WeightRow({ weight, onPreview, onChange }: { weight: WeightEntry; onPre
         </div>
         <StatusControls
           status={weight.status}
-          onReject={async () => {
-            const r = askReason();
+          busy={busy}
+          onApprove={() => void act(() => onStatusChange(weight, "approved"))}
+          onReject={() => {
+            const r = askRejectReason();
             if (r === null) return;
-            await setWeightEntryStatus(weight.id, "rejected", r || undefined);
-            onChange();
-          }}
-          onRestore={async () => {
-            await setWeightEntryStatus(weight.id, "submitted");
-            onChange();
+            void act(() => onStatusChange(weight, "rejected", r));
           }}
         />
       </div>

@@ -6,6 +6,7 @@ import { mapRun, validateImageSlots, type DbRunRow } from "../_lib/entries/map.j
 import { mapRunDbError } from "../_lib/entries/db-error.js";
 import { attachRunImages } from "../_lib/entries/attach-run-images.js";
 import { isRunDateAllowed } from "../_lib/entries/run-date-bounds.js";
+import { resolveSubmitStatus } from "../_lib/entries/status.js";
 import {
   loadAttachmentViews,
   migrateLegacyRunImages,
@@ -126,6 +127,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: "ภาพกิจกรรมไม่ถูกต้อง กรุณาเลือกรูปใหม่" });
       }
 
+      if (id) {
+        const row = existingRow!;
+        if (row.status === "rejected") {
+          return res.status(400).json({ error: "รายการที่ไม่ผ่านแล้วแก้ไขไม่ได้ กรุณาส่งรายการใหม่" });
+        }
+        if (!auth.isLead && row.status !== "pending") {
+          return res.status(400).json({ error: "แก้ไขได้เฉพาะรายการที่รออนุมัติ" });
+        }
+      }
+
+      const isLeadSelf = auth.isLead && employeeId === auth.sub;
+      const status = resolveSubmitStatus(isLeadSelf);
+      const nowIso = new Date().toISOString();
+      const approvalFields =
+        status === "approved"
+          ? { approved_by: auth.sub, approved_at: nowIso }
+          : { approved_by: null, approved_at: null };
+
       const rowPayload = {
         run_date: date,
         run_type: runType,
@@ -133,9 +152,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         duration_sec: durationSec,
         mission_month: missionTag,
         note,
-        status: "submitted" as const,
+        status,
         reject_note: null,
         rejected_by: null,
+        ...approvalFields,
       };
 
       if (id) {

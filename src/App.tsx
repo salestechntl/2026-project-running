@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { Home as HomeIcon, PenLine, BarChart3, Users, Building2, Download, UserCog } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
-import { countNewForTeam, DATA_CHANGED_EVENT } from "@/lib/entries";
+import { countPendingForTeam, DATA_CHANGED_EVENT } from "@/lib/entries";
 import { useSubordinates } from "@/lib/hooks/useTeam";
 import { useRejectedEntryCount } from "@/lib/hooks/useEntries";
 import { AppShell, type NavItem } from "@/components/AppShell";
@@ -15,8 +15,8 @@ import SuperAdmin from "@/pages/SuperAdmin";
 import Export from "@/pages/Export";
 import EmployeeAdmin from "@/pages/EmployeeAdmin";
 
-/** จำนวนรายการใหม่/อัปเดตของทีม สำหรับ badge บนเมนู "ข้อมูลทีม" */
-function useNewTeamCount(userId: string | undefined, isLead: boolean): number {
+/** จำนวนรายการรออนุมัติของทีม สำหรับ badge บนเมนู "ข้อมูลทีม" */
+function usePendingTeamCount(userId: string | undefined, isLead: boolean): number {
   const { team } = useSubordinates(isLead ? userId : undefined);
   const [count, setCount] = useState(0);
 
@@ -29,10 +29,10 @@ function useNewTeamCount(userId: string | undefined, isLead: boolean): number {
     const ids = team.map((e) => e.id);
     const recompute = async () => {
       try {
-        const n = await countNewForTeam(userId, ids);
+        const n = await countPendingForTeam(userId, ids);
         if (!cancelled) setCount(n);
       } catch (e) {
-        console.error("useNewTeamCount:", e);
+        console.error("usePendingTeamCount:", e);
       }
     };
     void recompute();
@@ -58,7 +58,7 @@ function ProtectedLayout() {
   }
   if (!user) return <Navigate to="/" replace />;
 
-  const teamNew = useNewTeamCount(user.id, isLead);
+  const teamPending = usePendingTeamCount(user.id, isLead);
   const rejectedCount = useRejectedEntryCount(user.id);
 
   const nav: NavItem[] = [
@@ -71,7 +71,7 @@ function ProtectedLayout() {
       badge: rejectedCount || undefined,
     },
     { to: "/app/dashboard", label: "Dashboard", short: "Dashboard", icon: BarChart3 },
-    ...(isLead ? [{ to: "/app/admin", label: "ข้อมูลทีม", short: "ทีม", icon: Users, badge: teamNew }] : []),
+    ...(isLead ? [{ to: "/app/admin", label: "ข้อมูลทีม", short: "ทีม", icon: Users, badge: teamPending }] : []),
     ...(isSuperAdmin
       ? [
           { to: "/app/employees", label: "จัดการพนักงาน", short: "พนักงาน", icon: UserCog },

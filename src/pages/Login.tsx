@@ -30,19 +30,17 @@ export default function Login() {
     <div className="relative min-h-screen bg-background">
       <div className="grid min-h-screen pb-12 lg:grid-cols-[1.05fr_1fr] lg:pb-14">
       {/* Brand panel */}
-      <div className="relative hidden flex-col justify-between overflow-hidden bg-ink p-10 text-ink-foreground lg:flex">
-        <div className="grain absolute inset-0 opacity-60" />
-        <div
-          className="absolute -right-24 -top-24 h-96 w-96 rounded-full opacity-30 blur-3xl"
-          style={{ background: "radial-gradient(circle, hsl(var(--primary)), transparent 70%)" }}
-        />
+      <div className="relative hidden flex-col justify-between overflow-hidden hero-surface p-10 lg:flex">
+        <div className="grain absolute inset-0 opacity-50" />
+        <div className="hero-glow absolute -right-24 -top-24 h-96 w-96 rounded-full opacity-40 blur-3xl" />
+        <div className="hero-glow-accent absolute -bottom-16 left-8 h-64 w-64 rounded-full opacity-30 blur-3xl" />
         <div className="relative flex items-center gap-3">
           <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-glow">
             <Footprints className="h-6 w-6" />
           </span>
           <div>
             <p className="font-display text-lg font-extrabold tracking-tight">Running Camp</p>
-            <p className="text-sm font-semibold text-primary">2026</p>
+            <p className="text-sm font-bold text-accent">2026</p>
           </div>
         </div>
 

@@ -8,6 +8,7 @@ import {
 import { saveWeight as localSaveWeight, type WeightEntry } from "./store";
 
 type WeightSaveInput = Omit<WeightEntry, "id" | "createdAt" | "updatedAt" | "status"> & {
+  id?: string;
   status?: WeightEntry["status"];
   proofImageRef?: string;
 };

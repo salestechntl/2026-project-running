@@ -10,8 +10,19 @@
 import { EMPLOYEES, isTeamLead, subordinates } from "./data";
 import { currentMonthKey, monthOf, missionName } from "./missions";
 
-/** สถานะการตรวจ: ส่งแล้ว / ถูกหัวหน้าตีกลับให้แก้ */
-export type EntryStatus = "submitted" | "rejected";
+/** สถานะการตรวจ: รออนุมัติ / อนุมัติแล้ว / ไม่ผ่าน */
+export type EntryStatus = "pending" | "approved" | "rejected";
+
+export const ENTRY_STATUS_LABEL: Record<EntryStatus, string> = {
+  pending: "รออนุมัติ",
+  approved: "อนุมัติแล้ว",
+  rejected: "ไม่ผ่าน",
+};
+
+function resolveStatusForEmployee(employeeId: string, explicit?: EntryStatus): EntryStatus {
+  if (explicit) return explicit;
+  return isTeamLead(employeeId) ? "approved" : "pending";
+}
 
 /** ประเภทการวิ่ง: วัดวินัย (ค่าเริ่มต้น) / ภารกิจประจำเดือน */
 export type RunType = "discipline" | "mission";
@@ -95,11 +106,24 @@ type RunInput = Omit<RunEntry, "id" | "createdAt" | "updatedAt" | "status"> & {
 
 export function saveRun(entry: RunInput): RunEntry {
   const rows = read<RunEntry>(RUN_KEY);
+  const status = resolveStatusForEmployee(entry.employeeId, entry.status);
   if (entry.id) {
     const idx = rows.findIndex((r) => r.id === entry.id);
     if (idx >= 0) {
-      // เจ้าตัวแก้ไข → กลับไปสถานะ "ส่งแล้ว" และล้างเหตุผลตีกลับ
-      rows[idx] = { ...rows[idx], ...entry, status: entry.status ?? "submitted", rejectNote: undefined, updatedAt: Date.now() };
+      const cur = rows[idx];
+      if (cur.status === "rejected") {
+        throw new Error("รายการที่ไม่ผ่านแล้วแก้ไขไม่ได้ กรุณาส่งรายการใหม่");
+      }
+      if (!isTeamLead(entry.employeeId) && cur.status !== "pending") {
+        throw new Error("แก้ไขได้เฉพาะรายการที่รออนุมัติ");
+      }
+      rows[idx] = {
+        ...rows[idx],
+        ...entry,
+        status,
+        rejectNote: undefined,
+        updatedAt: Date.now(),
+      };
       write(RUN_KEY, rows);
       notifyDataChanged();
       return rows[idx];
@@ -108,7 +132,7 @@ export function saveRun(entry: RunInput): RunEntry {
   const now = Date.now();
   const created: RunEntry = {
     ...entry,
-    status: entry.status ?? "submitted",
+    status,
     id: uid("run"),
     createdAt: now,
     updatedAt: now,
@@ -120,16 +144,33 @@ export function saveRun(entry: RunInput): RunEntry {
 }
 
 export function deleteRun(id: string) {
-  write(RUN_KEY, read<RunEntry>(RUN_KEY).filter((r) => r.id !== id));
+  const rows = read<RunEntry>(RUN_KEY);
+  const row = rows.find((r) => r.id === id);
+  if (!row || row.status !== "pending") return;
+  write(
+    RUN_KEY,
+    rows.filter((r) => r.id !== id),
+  );
+  notifyDataChanged();
 }
 
-/** หัวหน้าตีกลับ/คืนสถานะรายการวิ่ง */
+/** หัวหน้าอนุมัติ/ปฏิเสธรายการวิ่ง */
 export function setRunStatus(id: string, status: EntryStatus, rejectNote?: string) {
   const rows = read<RunEntry>(RUN_KEY);
   const idx = rows.findIndex((r) => r.id === id);
   if (idx < 0) return;
-  rows[idx] = { ...rows[idx], status, rejectNote: status === "rejected" ? rejectNote : undefined };
+  const cur = rows[idx];
+  if (status === "approved" && cur.status !== "pending") return;
+  if (status === "rejected" && cur.status !== "pending" && cur.status !== "approved") return;
+  if (status === "rejected" && !rejectNote?.trim()) return;
+  rows[idx] = {
+    ...rows[idx],
+    status,
+    rejectNote: status === "rejected" ? rejectNote : undefined,
+    updatedAt: Date.now(),
+  };
   write(RUN_KEY, rows);
+  notifyDataChanged();
 }
 
 /* ---------- Weights ---------- */
@@ -141,24 +182,40 @@ export function getWeights(employeeId?: string): WeightEntry[] {
   return employeeId ? rows.filter((r) => r.employeeId === employeeId) : rows;
 }
 
-type WeightInput = Omit<WeightEntry, "id" | "createdAt" | "updatedAt" | "status"> & { status?: EntryStatus };
+type WeightInput = Omit<WeightEntry, "id" | "createdAt" | "updatedAt" | "status"> & {
+  id?: string;
+  status?: EntryStatus;
+};
 
 export function saveWeight(entry: WeightInput): WeightEntry {
   const rows = read<WeightEntry>(WEIGHT_KEY);
-  // one record per employee/month/period — upsert
-  const idx = rows.findIndex(
-    (r) => r.employeeId === entry.employeeId && r.month === entry.month && r.period === entry.period,
-  );
-  if (idx >= 0) {
-    rows[idx] = { ...rows[idx], ...entry, status: entry.status ?? "submitted", rejectNote: undefined, updatedAt: Date.now() };
-    write(WEIGHT_KEY, rows);
-    notifyDataChanged();
-    return rows[idx];
+  const status = resolveStatusForEmployee(entry.employeeId, entry.status);
+  if (entry.id) {
+    const idx = rows.findIndex((r) => r.id === entry.id);
+    if (idx >= 0) {
+      const cur = rows[idx];
+      if (cur.status === "rejected") {
+        throw new Error("รายการที่ไม่ผ่านแล้วแก้ไขไม่ได้ กรุณาส่งรายการใหม่");
+      }
+      if (!isTeamLead(entry.employeeId) && cur.status !== "pending") {
+        throw new Error("แก้ไขได้เฉพาะรายการที่รออนุมัติ");
+      }
+      rows[idx] = {
+        ...rows[idx],
+        ...entry,
+        status,
+        rejectNote: undefined,
+        updatedAt: Date.now(),
+      };
+      write(WEIGHT_KEY, rows);
+      notifyDataChanged();
+      return rows[idx];
+    }
   }
   const now = Date.now();
   const created: WeightEntry = {
     ...entry,
-    status: entry.status ?? "submitted",
+    status,
     id: uid("wt"),
     createdAt: now,
     updatedAt: now,
@@ -169,12 +226,33 @@ export function saveWeight(entry: WeightInput): WeightEntry {
   return created;
 }
 
+export function deleteWeight(id: string) {
+  const rows = read<WeightEntry>(WEIGHT_KEY);
+  const row = rows.find((r) => r.id === id);
+  if (!row || row.status !== "pending") return;
+  write(
+    WEIGHT_KEY,
+    rows.filter((r) => r.id !== id),
+  );
+  notifyDataChanged();
+}
+
 export function setWeightStatus(id: string, status: EntryStatus, rejectNote?: string) {
   const rows = read<WeightEntry>(WEIGHT_KEY);
   const idx = rows.findIndex((r) => r.id === id);
   if (idx < 0) return;
-  rows[idx] = { ...rows[idx], status, rejectNote: status === "rejected" ? rejectNote : undefined };
+  const cur = rows[idx];
+  if (status === "approved" && cur.status !== "pending") return;
+  if (status === "rejected" && cur.status !== "pending" && cur.status !== "approved") return;
+  if (status === "rejected" && !rejectNote?.trim()) return;
+  rows[idx] = {
+    ...rows[idx],
+    status,
+    rejectNote: status === "rejected" ? rejectNote : undefined,
+    updatedAt: Date.now(),
+  };
   write(WEIGHT_KEY, rows);
+  notifyDataChanged();
 }
 
 /** เดือนปัจจุบัน (อ้างอิงโหมดสาธิตใน missions.ts) */
@@ -229,20 +307,28 @@ function writeSeenMap(map: Record<string, string[]>, notify = true) {
   localStorage.setItem(SEEN_KEY, JSON.stringify(map));
   if (notify) notifyDataChanged();
 }
-function seenSet(leadId: string): Set<string> {
-  return new Set(readSeenMap()[leadId] ?? []);
+
+/** จำนวนรายการรออนุมัติของสมาชิกคนหนึ่ง */
+export function pendingCountForMember(memberId: string): number {
+  return pendingTeamCount([memberId]);
 }
 
-/** จำนวนรายการใหม่/อัปเดตของสมาชิกคนหนึ่ง ที่หัวหน้ายังไม่ได้เปิดดู */
-export function newCountForMember(leadId: string, memberId: string): number {
-  const seen = seenSet(leadId);
-  return teamSubs([memberId]).filter((s) => !seen.has(s.key)).length;
+/** จำนวนรายการรออนุมัติรวมทั้งทีม (สำหรับ badge บนเมนู) */
+export function pendingTeamCount(employeeIds: string[]): number {
+  const set = new Set(employeeIds);
+  const runs = read<RunEntry>(RUN_KEY).filter((r) => set.has(r.employeeId) && r.status === "pending").length;
+  const weights = read<WeightEntry>(WEIGHT_KEY).filter((w) => set.has(w.employeeId) && w.status === "pending").length;
+  return runs + weights;
 }
 
-/** จำนวนรายการใหม่/อัปเดตรวมทั้งทีม (สำหรับ badge บนเมนู) */
-export function newTeamCount(leadId: string, employeeIds: string[]): number {
-  const seen = seenSet(leadId);
-  return teamSubs(employeeIds).filter((s) => !seen.has(s.key)).length;
+/** @deprecated ใช้ pendingTeamCount แทน — คงไว้สำหรับโหมด local เก่า */
+export function newCountForMember(_leadId: string, memberId: string): number {
+  return pendingCountForMember(memberId);
+}
+
+/** @deprecated ใช้ pendingTeamCount แทน */
+export function newTeamCount(_leadId: string, employeeIds: string[]): number {
+  return pendingTeamCount(employeeIds);
 }
 
 /** ทำเครื่องหมายว่าหัวหน้าเปิดดูรายการของสมาชิกคนนี้แล้ว → เคลียร์ badge ของคนนั้น */
@@ -328,7 +414,7 @@ function weightProof(weightKg: number, label: string): string {
 }
 
 /* ---------- Seed (mock ข้อมูลทีม) ---------- */
-const SEED_VERSION = "rc2026.seeded.v7";
+const SEED_VERSION = "rc2026.seeded.v8";
 
 // [emp, dateISO, km, sec, note?, status?, rejectNote?]
 type RunSeed = [string, string, number, number, string?, EntryStatus?, string?];
@@ -355,6 +441,7 @@ const RUN_SEED: RunSeed[] = [
   ["10020", "2026-09-01", 6.12, 2040],
   ["10020", "2026-08-09", 9.3, 3120, "โซน 2 ยาว ๆ"],
   ["10021", "2026-09-09", 3.0, 1140],
+  ["10021", "2026-09-11", 4.0, 1380, undefined, "pending"],
   ["10022", "2026-09-07", 7.8, 2640],
   ["10022", "2026-09-11", 6.1, 2100],
   ["10022", "2026-07-28", 5.25, 1830, "Virtual Run งานวิ่งการกุศล"],
@@ -369,6 +456,7 @@ const WEIGHT_SEED: WeightSeed[] = [
   ["10012", "2026-09", "start", 80.5],
   ["10013", "2026-09", "start", 63.7],
   ["10020", "2026-09", "start", 69.0],
+  ["10020", "2026-09", "end", 68.5, "pending"],
   ["10021", "2026-09", "start", 75.3],
   ["10022", "2026-09", "start", 55.8],
 ];
@@ -398,7 +486,7 @@ export function seedDemo() {
       durationSec: sec,
       missionTag: mission,
       note,
-      status: status ?? "submitted",
+      status: status ?? (isTeamLead(emp) ? "approved" : "pending"),
       stravaImages: images,
     });
     if (status === "rejected") {
@@ -414,7 +502,7 @@ export function seedDemo() {
       month,
       period,
       weightKg: kg,
-      status: status ?? "submitted",
+      status: status ?? (isTeamLead(emp) ? "approved" : "pending"),
       proofImage: weightProof(kg, period === "start" ? "ต้นเดือน" : "สิ้นเดือน"),
     });
     if (status === "rejected") {

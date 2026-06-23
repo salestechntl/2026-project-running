@@ -17,12 +17,13 @@ export default function Home() {
 
   if (!user) return null;
 
-  const totalKm = runs.reduce((s, r) => s + r.distanceKm, 0);
-  const thisMonthRuns = runs.filter((r) => monthOf(r.date) === currentMonthKey());
+  const totalKm = runs.filter((r) => r.status === "approved").reduce((s, r) => s + r.distanceKm, 0);
+  const thisMonthRuns = runs.filter((r) => r.status === "approved" && monthOf(r.date) === currentMonthKey());
   const monthKm = thisMonthRuns.reduce((s, r) => s + r.distanceKm, 0);
+  const approvedRunCount = runs.filter((r) => r.status === "approved").length;
 
-  const hasStart = weighs.some((w) => w.period === "start");
-  const hasEnd = weighs.some((w) => w.period === "end");
+  const hasStart = weighs.some((w) => w.period === "start" && w.status === "approved");
+  const hasEnd = weighs.some((w) => w.period === "end" && w.status === "approved");
   const weightDone = hasStart && hasEnd;
 
   const menu = [
@@ -62,13 +63,10 @@ export default function Home() {
         const m = missionForMonth(cur);
         if (!m) return null;
         return (
-          <section className="relative overflow-hidden rounded-lg border border-transparent bg-ink p-5 text-ink-foreground animate-fade-up sm:p-6">
-            <div
-              className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full opacity-30 blur-2xl"
-              style={{ background: "radial-gradient(circle, hsl(var(--primary)), transparent 70%)" }}
-            />
+          <section className="relative overflow-hidden rounded-2xl border border-primary/20 hero-surface p-5 animate-fade-up sm:p-6">
+            <div className="hero-glow pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full opacity-50 blur-2xl" />
             <div className="relative">
-              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-primary">
+              <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-accent">
                 <Target className="h-3.5 w-3.5" /> ภารกิจประจำเดือน · {monthLabel(cur)}
               </p>
               <h2 className="mt-1.5 font-display text-xl font-extrabold tracking-tight">{m.name}</h2>
@@ -82,8 +80,8 @@ export default function Home() {
       <section className="animate-fade-up">
         <div
           className={cn(
-            "flex flex-col gap-4 rounded-lg border p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between",
-            weightDone ? "border-success/30 bg-success/[0.06]" : "border-primary/30 bg-primary/[0.04]",
+            "flex flex-col gap-4 rounded-2xl border p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between",
+            weightDone ? "border-success/30 bg-success/[0.06]" : "border-primary/25 bg-primary/[0.04]",
           )}
         >
           <div className="flex items-start gap-3">
@@ -146,7 +144,7 @@ export default function Home() {
           <>
         <StatGroup title="สะสมทั้งหมด" caption="ตั้งแต่เริ่มโครงการ" icon={TrendingUp} tone="ink">
           <Stat label="ระยะทางสะสม" value={totalKm.toFixed(1)} unit="กม." />
-          <Stat label="จำนวนครั้งที่วิ่ง" value={String(runs.length)} unit="ครั้ง" />
+          <Stat label="จำนวนครั้งที่วิ่ง" value={String(approvedRunCount)} unit="ครั้ง" />
         </StatGroup>
         <StatGroup title="เดือนนี้" caption={monthLabel(currentMonthKey())} icon={Target} tone="primary">
           <Stat label="ระยะทางสะสม" value={monthKm.toFixed(1)} unit="กม." />
@@ -165,17 +163,17 @@ export default function Home() {
               key={m.to}
               to={m.to}
               style={{ animationDelay: `${i * 60}ms` }}
-              className={`group relative flex flex-col justify-between overflow-hidden rounded-lg border p-6 shadow-sm transition-all duration-200 animate-scale-in hover:-translate-y-0.5 hover:shadow-lg focus-visible:-translate-y-0.5 ${
+              className={`group relative flex flex-col justify-between overflow-hidden rounded-2xl border p-6 shadow-sm transition-all duration-200 animate-scale-in hover:-translate-y-0.5 hover:shadow-lg focus-visible:-translate-y-0.5 ${
                 m.featured
-                  ? "border-transparent bg-ink text-ink-foreground"
-                  : "border-border bg-card hover:border-primary/40"
+                  ? "hero-surface border-primary/30 text-ink-foreground shadow-md"
+                  : "border-border/80 bg-card hover:border-primary/30 hover:shadow-md"
               }`}
             >
               {m.featured && (
-                <div
-                  className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full opacity-30 blur-2xl transition-opacity group-hover:opacity-50"
-                  style={{ background: "radial-gradient(circle, hsl(var(--primary)), transparent 70%)" }}
-                />
+                <>
+                  <div className="hero-glow pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full opacity-40 blur-2xl" />
+                  <div className="hero-glow-accent pointer-events-none absolute -bottom-8 left-4 h-32 w-32 rounded-full opacity-25 blur-2xl" />
+                </>
               )}
               <div className="relative">
                 <span
@@ -192,7 +190,7 @@ export default function Home() {
               </div>
               <span
                 className={`relative mt-6 inline-flex items-center gap-1.5 text-sm font-semibold ${
-                  m.featured ? "text-primary" : "text-foreground"
+                  m.featured ? "text-accent" : "text-primary"
                 }`}
               >
                 {m.cta}
@@ -205,7 +203,7 @@ export default function Home() {
 
       {/* Quick hints */}
       <section className="grid gap-3 sm:grid-cols-2">
-        <div className="flex items-start gap-3 rounded-lg border border-border bg-card p-4">
+        <div className="flex items-start gap-3 rounded-xl border border-border/80 bg-card p-4 shadow-xs">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <TrendingUp className="h-[18px] w-[18px]" />
           </span>
@@ -214,7 +212,7 @@ export default function Home() {
             <p className="text-xs text-muted-foreground">แนบภาพจาก Strava เพื่อยืนยันผล · ภารกิจกำหนดตามเดือนอัตโนมัติ</p>
           </div>
         </div>
-        <div className="flex items-start gap-3 rounded-lg border border-border bg-card p-4">
+        <div className="flex items-start gap-3 rounded-xl border border-border/80 bg-card p-4 shadow-xs">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Scale className="h-[18px] w-[18px]" />
           </span>
@@ -242,7 +240,7 @@ function StatGroup({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-muted/30 p-3 sm:p-4">
+    <div className="rounded-2xl border border-border/80 bg-card p-3 shadow-sm sm:p-4">
       <div className="mb-2.5 flex items-center gap-2 px-0.5">
         <span
           className={cn(

@@ -15,6 +15,8 @@ const HEADERS = [
   "status",
   "reject_note",
   "rejected_by",
+  "approved_by",
+  "approved_at",
   "created_at",
   "updated_at",
 ];

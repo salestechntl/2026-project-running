@@ -19,9 +19,8 @@ import {
   deleteRun as localDeleteRun,
   getRuns as localGetRuns,
   getWeights as localGetWeights,
-  markMemberSeen as localMarkMemberSeen,
-  newCountForMember as localNewCountForMember,
-  newTeamCount as localNewTeamCount,
+  pendingCountForMember as localPendingCountForMember,
+  pendingTeamCount as localPendingTeamCount,
   saveRun as localSaveRun,
   saveWeight as localSaveWeight,
   setRunStatus as localSetRunStatus,
@@ -70,13 +69,19 @@ export async function deleteRunEntry(id: string): Promise<void> {
   localDeleteRun(id);
 }
 
-export async function setRunEntryStatus(id: string, status: EntryStatus, rejectNote?: string): Promise<void> {
+export async function setRunEntryStatus(
+  id: string,
+  status: EntryStatus,
+  rejectNote?: string,
+  options?: { notify?: boolean },
+): Promise<void> {
   if (getAuthMode() === "api") {
     await apiSetRunStatus(id, status, rejectNote);
-    notifyDataChanged();
+    if (options?.notify !== false) notifyDataChanged();
     return;
   }
   localSetRunStatus(id, status, rejectNote);
+  if (options?.notify !== false) notifyDataChanged();
 }
 
 export async function fetchWeights(employeeId?: string): Promise<WeightEntry[]> {
@@ -86,6 +91,7 @@ export async function fetchWeights(employeeId?: string): Promise<WeightEntry[]> 
 
 export async function saveWeightEntry(
   entry: Omit<WeightEntry, "id" | "createdAt" | "updatedAt" | "status"> & {
+    id?: string;
     status?: EntryStatus;
     proofImageRef?: string;
   },
@@ -98,13 +104,19 @@ export async function saveWeightEntry(
   return localSaveWeight(entry);
 }
 
-export async function setWeightEntryStatus(id: string, status: EntryStatus, rejectNote?: string): Promise<void> {
+export async function setWeightEntryStatus(
+  id: string,
+  status: EntryStatus,
+  rejectNote?: string,
+  options?: { notify?: boolean },
+): Promise<void> {
   if (getAuthMode() === "api") {
     await apiSetWeightStatus(id, status, rejectNote);
-    notifyDataChanged();
+    if (options?.notify !== false) notifyDataChanged();
     return;
   }
   localSetWeightStatus(id, status, rejectNote);
+  if (options?.notify !== false) notifyDataChanged();
 }
 
 export async function fetchSubordinates(managerId: string): Promise<Employee[]> {
@@ -112,89 +124,48 @@ export async function fetchSubordinates(managerId: string): Promise<Employee[]> 
   return localSubordinates(managerId);
 }
 
-function subKey(id: string, updatedAt: number): string {
-  return `${id}@${updatedAt}`;
-}
-
-interface TeamSub {
-  memberId: string;
-  key: string;
-}
-
-async function teamSubs(employeeIds: string[]): Promise<TeamSub[]> {
+async function countPendingRows(employeeIds: string[]): Promise<number> {
   const set = new Set(employeeIds);
   if (getAuthMode() === "api") {
     const results = await Promise.all(
       employeeIds.map(async (id) => {
         const [runs, weights] = await Promise.all([apiFetchRuns(id), apiFetchWeights(id)]);
-        return { id, runs, weights };
+        return { runs, weights };
       }),
     );
-    const subs: TeamSub[] = [];
-    for (const { id, runs, weights } of results) {
-      if (!set.has(id)) continue;
-      for (const r of runs) {
-        subs.push({ memberId: id, key: subKey(r.id, r.updatedAt) });
-      }
-      for (const w of weights) {
-        subs.push({ memberId: id, key: subKey(w.id, w.updatedAt) });
-      }
+    let n = 0;
+    for (const { runs, weights } of results) {
+      n += runs.filter((r) => set.has(r.employeeId) && r.status === "pending").length;
+      n += weights.filter((w) => set.has(w.employeeId) && w.status === "pending").length;
     }
-    return subs;
+    return n;
   }
-
-  const runs = localGetRuns().filter((r) => set.has(r.employeeId));
-  const weights = localGetWeights().filter((w) => set.has(w.employeeId));
-  return [
-    ...runs.map((r) => ({ memberId: r.employeeId, key: subKey(r.id, r.updatedAt) })),
-    ...weights.map((w) => ({ memberId: w.employeeId, key: subKey(w.id, w.updatedAt) })),
-  ];
+  return localPendingTeamCount(employeeIds);
 }
 
-const SEEN_KEY = "rc2026.seenSubs";
-
-function readSeenMap(): Record<string, string[]> {
-  try {
-    return JSON.parse(localStorage.getItem(SEEN_KEY) || "{}");
-  } catch {
-    return {};
-  }
+export async function countPendingForMember(_leadId: string, memberId: string): Promise<number> {
+  if (getAuthMode() === "local") return localPendingCountForMember(memberId);
+  const [runs, weights] = await Promise.all([apiFetchRuns(memberId), apiFetchWeights(memberId)]);
+  return runs.filter((r) => r.status === "pending").length + weights.filter((w) => w.status === "pending").length;
 }
 
-function writeSeenMap(map: Record<string, string[]>, notify = true) {
-  localStorage.setItem(SEEN_KEY, JSON.stringify(map));
-  if (notify) notifyDataChanged();
+export async function countPendingForTeam(_leadId: string, employeeIds: string[]): Promise<number> {
+  return countPendingRows(employeeIds);
 }
 
-export async function countNewForMember(leadId: string, memberId: string): Promise<number> {
-  if (getAuthMode() === "local") return localNewCountForMember(leadId, memberId);
-  const seen = new Set(readSeenMap()[leadId] ?? []);
-  const subs = await teamSubs([memberId]);
-  return subs.filter((s) => !seen.has(s.key)).length;
-}
-
+/** @deprecated ใช้ countPendingForTeam */
 export async function countNewForTeam(leadId: string, employeeIds: string[]): Promise<number> {
-  if (getAuthMode() === "local") return localNewTeamCount(leadId, employeeIds);
-  const seen = new Set(readSeenMap()[leadId] ?? []);
-  const subs = await teamSubs(employeeIds);
-  return subs.filter((s) => !seen.has(s.key)).length;
+  return countPendingForTeam(leadId, employeeIds);
 }
 
-export async function markMemberSeen(leadId: string, memberId: string): Promise<void> {
-  if (getAuthMode() === "local") {
-    localMarkMemberSeen(leadId, memberId);
-    return;
-  }
-  const map = readSeenMap();
-  const seen = new Set(map[leadId] ?? []);
-  const subs = await teamSubs([memberId]);
-  subs.forEach((s) => seen.add(s.key));
-  map[leadId] = Array.from(seen);
-  writeSeenMap(map);
+/** @deprecated ใช้ countPendingForMember */
+export async function countNewForMember(leadId: string, memberId: string): Promise<number> {
+  return countPendingForMember(leadId, memberId);
 }
 
 export {
   DATA_CHANGED_EVENT,
+  ENTRY_STATUS_LABEL,
   RUN_TYPE_LABEL,
   currentMonth,
   type RunEntry,

@@ -157,6 +157,7 @@ export async function apiFetchWeights(employeeId?: string): Promise<WeightEntry[
 
 export async function apiSaveWeight(
   entry: Omit<WeightEntry, "id" | "createdAt" | "updatedAt" | "status"> & {
+    id?: string;
     status?: EntryStatus;
     proofImageRef?: string;
   },

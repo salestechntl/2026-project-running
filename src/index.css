@@ -3,33 +3,37 @@
 @tailwind utilities;
 
 :root {
-  /* Neutral, warm base — mostly grays with one confident flame accent */
-  --background: 30 24% 98%;
-  --foreground: 24 14% 12%;
+  /* Tidlor-inspired: clean white base, digital blue primary, navy hero, warm accent */
+  --background: 220 100% 99%;
+  --foreground: 220 8% 22%;
 
   --card: 0 0% 100%;
-  --card-foreground: 24 14% 12%;
+  --card-foreground: 220 8% 22%;
 
-  --muted: 30 12% 95%;
-  --muted-foreground: 25 8% 44%;
+  --muted: 220 60% 96%;
+  --muted-foreground: 220 6% 46%;
 
-  --border: 28 14% 90%;
-  --input: 28 14% 88%;
-  --ring: 18 90% 52%;
+  --border: 220 32% 90%;
+  --input: 220 24% 86%;
+  --ring: 227 82% 53%;
 
-  /* Accent: flame orange — primary actions, focus, highlights */
-  --primary: 18 90% 52%;
+  /* Digital blue — primary actions, links, focus */
+  --primary: 227 82% 53%;
   --primary-foreground: 0 0% 100%;
 
-  /* Ink: deep neutral for hero / headers */
-  --ink: 222 24% 11%;
-  --ink-foreground: 30 24% 97%;
+  /* Warm accent — highlights on dark surfaces (Tidlor gold / CTA warmth) */
+  --accent: 38 100% 50%;
+  --accent-foreground: 231 100% 15%;
 
-  --success: 152 56% 40%;
+  /* Navy — hero panels, footer, featured cards */
+  --ink: 231 100% 15%;
+  --ink-foreground: 0 0% 100%;
+
+  --success: 152 56% 38%;
   --warning: 38 92% 50%;
   --danger: 0 72% 51%;
 
-  --radius: 14px;
+  --radius: 12px;
 }
 
 * {
@@ -44,20 +48,18 @@ body {
   margin: 0;
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
-  font-family: "IBM Plex Sans Thai", Inter, system-ui, sans-serif;
+  font-family: "Noto Sans Thai", "IBM Plex Sans Thai", Inter, system-ui, sans-serif;
   font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;
 }
 
-/* Tabular numbers for stats / metrics */
 .tnum {
   font-variant-numeric: tabular-nums;
-  font-family: Inter, "IBM Plex Sans Thai", sans-serif;
+  font-family: Inter, "Noto Sans Thai", sans-serif;
 }
 
-/* Visible, branded focus ring everywhere */
 :focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
@@ -65,10 +67,9 @@ body {
 }
 
 ::selection {
-  background: hsl(var(--primary) / 0.18);
+  background: hsl(var(--primary) / 0.16);
 }
 
-/* Subtle scrollbar */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -79,10 +80,9 @@ body {
   border: 2px solid hsl(var(--background));
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(25 8% 70%);
+  background: hsl(220 12% 72%);
 }
 
-/* Style native date/file controls to fit the system */
 input[type="date"]::-webkit-calendar-picker-indicator {
   cursor: pointer;
   opacity: 0.55;
@@ -91,9 +91,35 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
 }
 
+/* Subtle dot pattern on hero surfaces */
 .grain {
-  background-image: radial-gradient(hsl(var(--primary) / 0.08) 1px, transparent 1px);
+  background-image: radial-gradient(hsl(var(--primary) / 0.12) 1px, transparent 1px);
   background-size: 22px 22px;
+}
+
+/* Navy → blue hero (Tidlor-style corporate panels) */
+.hero-surface {
+  background: linear-gradient(
+    135deg,
+    hsl(var(--ink)) 0%,
+    hsl(207 100% 29%) 52%,
+    hsl(227 70% 42%) 100%
+  );
+  color: hsl(var(--ink-foreground));
+}
+
+.hero-glow {
+  background: radial-gradient(circle, hsl(var(--primary) / 0.5), transparent 70%);
+}
+
+.hero-glow-accent {
+  background: radial-gradient(circle, hsl(var(--accent) / 0.35), transparent 70%);
+}
+
+/* Primary button gradient — optional CTA emphasis */
+.btn-gradient {
+  background: linear-gradient(99deg, hsl(22 100% 63%) 5%, hsl(227 82% 53%) 94%);
+  color: hsl(var(--primary-foreground));
 }
 
 @media (prefers-reduced-motion: reduce) {
