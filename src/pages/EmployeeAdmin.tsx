@@ -12,10 +12,10 @@ import {
 import { Badge, Button, Card, ConfirmDialog, Field, Input, Select, LoadingBlock } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
-const ROLE_LABEL = { employee: "พนักงาน", super_admin: "Super Admin" } as const;
+const ROLE_LABEL = { employee: "พนักงาน", admin: "Admin", super_admin: "Super Admin" } as const;
 
 type ActiveFilter = "all" | "active" | "inactive";
-type RoleFilter = "all" | "employee" | "super_admin";
+type RoleFilter = "all" | "employee" | "admin" | "super_admin";
 
 function toForm(row: EmployeeRecord): EmployeeFormState {
   return {
@@ -267,6 +267,7 @@ export default function EmployeeAdmin() {
           <Select id="f-role" value={filterRole} onChange={(e) => setFilterRole(e.target.value as RoleFilter)}>
             <option value="all">ทั้งหมด</option>
             <option value="employee">พนักงาน</option>
+            <option value="admin">Admin</option>
             <option value="super_admin">Super Admin</option>
           </Select>
         </Field>
@@ -369,10 +370,11 @@ export default function EmployeeAdmin() {
                               className="h-9 text-xs"
                             >
                               <option value="employee">พนักงาน</option>
+                              <option value="admin">Admin</option>
                               <option value="super_admin">Super Admin</option>
                             </Select>
                           ) : (
-                            <Badge tone={row.role === "super_admin" ? "accent" : "neutral"}>
+                            <Badge tone={row.role === "super_admin" || row.role === "admin" ? "accent" : "neutral"}>
                               {ROLE_LABEL[row.role]}
                             </Badge>
                           )}

@@ -26,6 +26,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const body: MeResponse = {
       user,
       isLead: payload.isLead,
+      isAdmin: payload.role === "admin",
       isSuperAdmin: payload.role === "super_admin",
     };
 

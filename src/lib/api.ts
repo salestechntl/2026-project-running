@@ -147,6 +147,39 @@ export async function apiSetRunStatus(id: string, status: EntryStatus, rejectNot
   return data.run;
 }
 
+export async function apiStaffEditRun(
+  id: string,
+  body: {
+    date: string;
+    runType: RunEntry["runType"];
+    distanceKm: number;
+    durationSec: number;
+    note?: string;
+    missionMonth?: string;
+    status: EntryStatus;
+    rejectNote?: string;
+  },
+): Promise<RunEntry> {
+  const res = await fetch(`/api/runs/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      staffEdit: true,
+      date: body.date,
+      runType: body.runType,
+      distanceKm: body.distanceKm,
+      durationSec: body.durationSec,
+      note: body.note,
+      missionMonth: body.missionMonth,
+      status: body.status,
+      rejectNote: body.rejectNote,
+    }),
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  const data = (await res.json()) as { run: RunEntry };
+  return data.run;
+}
+
 export async function apiFetchWeights(employeeId?: string): Promise<WeightEntry[]> {
   const q = employeeId ? `?employee_id=${encodeURIComponent(employeeId)}` : "";
   const res = await fetch(`/api/weights${q}`, { headers: authHeaders() });
@@ -177,6 +210,29 @@ export async function apiSetWeightStatus(id: string, status: EntryStatus, reject
     method: "PATCH",
     headers: authHeaders(),
     body: JSON.stringify({ status, rejectNote }),
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  const data = (await res.json()) as { weight: WeightEntry };
+  return data.weight;
+}
+
+export async function apiStaffEditWeight(
+  id: string,
+  body: {
+    weightKg: number;
+    status: EntryStatus;
+    rejectNote?: string;
+  },
+): Promise<WeightEntry> {
+  const res = await fetch(`/api/weights/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      staffEdit: true,
+      weightKg: body.weightKg,
+      status: body.status,
+      rejectNote: body.rejectNote,
+    }),
   });
   if (!res.ok) throw new Error(await parseError(res));
   const data = (await res.json()) as { weight: WeightEntry };

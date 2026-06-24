@@ -1,9 +1,17 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAuth } from "../_lib/auth/require.js";
 import { createAdminClient, isSupabaseConfigured } from "../_lib/supabase/admin.js";
-import { canAccessEmployee } from "../_lib/team/access.js";
+import {
+  canAccessEmployee,
+  canApproveEntries,
+  canEditRejectedEntry,
+  canRejectApproved,
+  canRejectPending,
+} from "../_lib/team/access.js";
 import { mapWeight, type DbWeightRow } from "../_lib/entries/map.js";
+import { approvalFieldsForStatus } from "../_lib/entries/approval-fields.js";
 import { canLeadApprove, canLeadReject } from "../_lib/entries/status.js";
+import { snapshotEntry } from "../_lib/storage/attachments.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = requireAuth(req);
@@ -59,12 +67,66 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(405).json({ error: "Method not allowed" });
     }
 
-    if (!auth.isLead) {
-      return res.status(403).json({ error: "เฉพาะหัวหน้าทีมเท่านั้น" });
+    const allowed = await canAccessEmployee(supabase, auth.sub, row.employee_id, auth);
+    if (!allowed) return res.status(403).json({ error: "ไม่มีสิทธิ์จัดการรายการนี้" });
+
+    if (req.body?.staffEdit === true) {
+      if (!canEditRejectedEntry(auth)) {
+        return res.status(403).json({ error: "เฉพาะ Admin / Super Admin เท่านั้น" });
+      }
+      if (row.status !== "rejected") {
+        return res.status(400).json({ error: "แก้ไขได้เฉพาะรายการที่ไม่ผ่าน" });
+      }
+
+      const nextStatus = req.body?.status;
+      if (nextStatus !== "pending" && nextStatus !== "approved" && nextStatus !== "rejected") {
+        return res.status(400).json({ error: "สถานะไม่ถูกต้อง" });
+      }
+
+      const weightKg = Number(req.body?.weightKg ?? req.body?.weight_kg);
+      if (!weightKg || weightKg <= 0) {
+        return res.status(400).json({ error: "น้ำหนักต้องมากกว่า 0" });
+      }
+
+      let rejectNote: string | null = null;
+      if (nextStatus === "rejected") {
+        rejectNote = String(req.body?.rejectNote ?? row.reject_note ?? "").trim();
+        if (!rejectNote) {
+          return res.status(400).json({ error: "กรุณาระบุเหตุผลที่ไม่ผ่าน" });
+        }
+      }
+
+      await snapshotEntry(supabase, "weight", id, row as unknown as Record<string, unknown>, auth.sub, "staff_edit");
+
+      const { data: updated, error: updateError } = await supabase
+        .from("weight_entries")
+        .update({
+          weight_kg: weightKg,
+          ...approvalFieldsForStatus(nextStatus, auth.sub, { rejectNote }),
+        })
+        .eq("id", id)
+        .select("*")
+        .single();
+
+      if (updateError) {
+        console.error("weight staff edit error:", updateError);
+        return res.status(500).json({ error: "ไม่สามารถบันทึกการแก้ไขได้" });
+      }
+
+      await supabase.from("audit_log").insert({
+        actor_id: auth.sub,
+        action: "weight.staff_edit",
+        target_type: "weight",
+        target_id: id,
+        metadata: { status: nextStatus },
+      });
+
+      return res.status(200).json({ weight: mapWeight(updated as DbWeightRow) });
     }
 
-    const allowed = await canAccessEmployee(supabase, auth.sub, row.employee_id, true);
-    if (!allowed) return res.status(403).json({ error: "ไม่มีสิทธิ์จัดการรายการนี้" });
+    if (!canApproveEntries(auth)) {
+      return res.status(403).json({ error: "เฉพาะหัวหน้าทีมเท่านั้น" });
+    }
 
     const status = req.body?.status;
     if (status !== "approved" && status !== "rejected") {
@@ -107,6 +169,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!canLeadReject(row.status)) {
       return res.status(400).json({ error: "ไม่สามารถปฏิเสธรายการนี้ได้" });
+    }
+
+    if (row.status === "approved" && !canRejectApproved(auth)) {
+      return res.status(403).json({ error: "เฉพาะ Admin เท่านั้นที่สามารถไม่อนุมัติรายการที่อนุมัติแล้วได้" });
+    }
+    if (row.status === "pending" && !canRejectPending(auth)) {
+      return res.status(403).json({ error: "ไม่มีสิทธิ์ไม่อนุมัติรายการนี้" });
     }
 
     const rejectNote = String(req.body?.rejectNote ?? "").trim();

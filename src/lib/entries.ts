@@ -12,6 +12,8 @@ import {
   apiSaveWeight,
   apiSetRunStatus,
   apiSetWeightStatus,
+  apiStaffEditRun,
+  apiStaffEditWeight,
 } from "./api";
 import type { Employee } from "./types";
 import {
@@ -25,11 +27,13 @@ import {
   saveWeight as localSaveWeight,
   setRunStatus as localSetRunStatus,
   setWeightStatus as localSetWeightStatus,
+  staffEditRun as localStaffEditRun,
+  staffEditWeight as localStaffEditWeight,
   type EntryStatus,
   type RunEntry,
   type WeightEntry,
 } from "./store";
-import { subordinates as localSubordinates } from "./data";
+import { teamRoster as localTeamRoster } from "./data";
 
 function notifyDataChanged() {
   try {
@@ -119,9 +123,46 @@ export async function setWeightEntryStatus(
   if (options?.notify !== false) notifyDataChanged();
 }
 
+export async function staffEditRunEntry(
+  id: string,
+  body: {
+    date: string;
+    runType: RunEntry["runType"];
+    distanceKm: number;
+    durationSec: number;
+    note?: string;
+    missionMonth?: string;
+    status: EntryStatus;
+    rejectNote?: string;
+  },
+): Promise<RunEntry> {
+  if (getAuthMode() === "api") {
+    const run = await apiStaffEditRun(id, body);
+    notifyDataChanged();
+    return run;
+  }
+  return localStaffEditRun(id, body);
+}
+
+export async function staffEditWeightEntry(
+  id: string,
+  body: {
+    weightKg: number;
+    status: EntryStatus;
+    rejectNote?: string;
+  },
+): Promise<WeightEntry> {
+  if (getAuthMode() === "api") {
+    const weight = await apiStaffEditWeight(id, body);
+    notifyDataChanged();
+    return weight;
+  }
+  return localStaffEditWeight(id, body);
+}
+
 export async function fetchSubordinates(managerId: string): Promise<Employee[]> {
   if (getAuthMode() === "api") return apiFetchSubordinates();
-  return localSubordinates(managerId);
+  return localTeamRoster(managerId);
 }
 
 async function countPendingRows(employeeIds: string[]): Promise<number> {

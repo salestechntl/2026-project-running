@@ -106,9 +106,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const batchId = batch.id as string;
 
-    // Preserve super_admin role for existing super admins
-    const { data: roles } = await supabase.from("employees").select("employee_id, role").eq("role", "super_admin");
-    const superAdmins = new Set((roles ?? []).map((r) => r.employee_id as string));
+    // Preserve elevated roles for existing employees on org re-import
+    const { data: roles } = await supabase
+      .from("employees")
+      .select("employee_id, role")
+      .in("role", ["super_admin", "admin"]);
+    const roleById = new Map((roles ?? []).map((r) => [r.employee_id as string, r.role as string]));
 
     const upsertRows = sortOrgForUpsert(parsed.rows).map((r: OrgRow) => ({
       employee_id: r.employee_id,
@@ -118,7 +121,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       manager_id: r.manager_id,
       is_active: true,
       import_batch_id: batchId,
-      role: superAdmins.has(r.employee_id) ? "super_admin" : "employee",
+      role: roleById.get(r.employee_id) ?? "employee",
     }));
 
     const { error: upsertErr } = await supabase.from("employees").upsert(upsertRows, { onConflict: "employee_id" });
@@ -128,9 +131,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: "บันทึกข้อมูลพนักงานไม่สำเร็จ" });
     }
 
-    // Deactivate employees not in file (never deactivate super_admin)
+    // Deactivate employees not in file (never deactivate super_admin or admin)
     if (toDeactivate.length > 0) {
-      const deactivateIds = toDeactivate.filter((id) => !superAdmins.has(id));
+      const protectedIds = new Set(roleById.keys());
+      const deactivateIds = toDeactivate.filter((id) => !protectedIds.has(id));
       if (deactivateIds.length > 0) {
         await supabase
           .from("employees")
@@ -147,7 +151,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       metadata: {
         file_name: fileName,
         row_count: parsed.rows.length,
-        deactivated: toDeactivate.filter((id) => !superAdmins.has(id)).length,
+        deactivated: toDeactivate.filter((id) => !roleById.has(id)).length,
       },
     });
 

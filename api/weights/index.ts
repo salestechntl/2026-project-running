@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAuth } from "../_lib/auth/require.js";
 import { createAdminClient, isSupabaseConfigured } from "../_lib/supabase/admin.js";
-import { canAccessEmployee } from "../_lib/team/access.js";
+import { canAccessEmployee, canApproveEntries, canSelfApprove } from "../_lib/team/access.js";
 import { mapWeight, validateProofSlot, type DbWeightRow } from "../_lib/entries/map.js";
 import { resolveSubmitStatus } from "../_lib/entries/status.js";
 import {
@@ -49,7 +49,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const targetId = String(req.query.employee_id ?? auth.sub).trim();
       if (!targetId) return res.status(400).json({ error: "กรุณาระบุรหัสพนักงาน" });
 
-      const allowed = await canAccessEmployee(supabase, auth.sub, targetId, auth.isLead);
+      const allowed = await canAccessEmployee(supabase, auth.sub, targetId, auth);
       if (!allowed) return res.status(403).json({ error: "ไม่มีสิทธิ์ดูข้อมูลนี้" });
 
       const { data, error } = await supabase
@@ -117,12 +117,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (existingRow.status === "rejected") {
           return res.status(400).json({ error: "รายการที่ไม่ผ่านแล้วแก้ไขไม่ได้ กรุณาส่งรายการใหม่" });
         }
-        if (!auth.isLead && existingRow.status !== "pending") {
+        if (!canApproveEntries(auth) && existingRow.status !== "pending") {
           return res.status(400).json({ error: "แก้ไขได้เฉพาะรายการที่รออนุมัติ" });
         }
       }
 
-      const isLeadSelf = auth.isLead && employeeId === auth.sub;
+      const isLeadSelf = canSelfApprove(auth, employeeId, auth.sub);
       const status = resolveSubmitStatus(isLeadSelf);
       const nowIso = new Date().toISOString();
       const approvalFields =

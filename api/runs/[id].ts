@@ -1,10 +1,13 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAuth } from "../_lib/auth/require.js";
 import { createAdminClient, isSupabaseConfigured } from "../_lib/supabase/admin.js";
-import { canAccessEmployee } from "../_lib/team/access.js";
+import { canAccessEmployee, canApproveEntries, canEditRejectedEntry, canRejectApproved, canRejectPending } from "../_lib/team/access.js";
 import { mapRun, validateImageSlots, type DbRunRow } from "../_lib/entries/map.js";
+import { approvalFieldsForStatus } from "../_lib/entries/approval-fields.js";
 import { canLeadApprove, canLeadReject } from "../_lib/entries/status.js";
 import { attachRunImages } from "../_lib/entries/attach-run-images.js";
+import { isRunDateAllowed } from "../_lib/entries/run-date-bounds.js";
+import { loadAttachmentViews, snapshotEntry } from "../_lib/storage/attachments.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = requireAuth(req);
@@ -82,12 +85,94 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === "PATCH") {
-      if (!auth.isLead) {
-        return res.status(403).json({ error: "เฉพาะหัวหน้าทีมเท่านั้น" });
+      const allowed = await canAccessEmployee(supabase, auth.sub, row.employee_id, auth);
+      if (!allowed) return res.status(403).json({ error: "ไม่มีสิทธิ์จัดการรายการนี้" });
+
+      if (req.body?.staffEdit === true) {
+        if (!canEditRejectedEntry(auth)) {
+          return res.status(403).json({ error: "เฉพาะ Admin / Super Admin เท่านั้น" });
+        }
+        if (row.status !== "rejected") {
+          return res.status(400).json({ error: "แก้ไขได้เฉพาะรายการที่ไม่ผ่าน" });
+        }
+
+        const nextStatus = req.body?.status;
+        if (nextStatus !== "pending" && nextStatus !== "approved" && nextStatus !== "rejected") {
+          return res.status(400).json({ error: "สถานะไม่ถูกต้อง" });
+        }
+
+        const runDate = String(req.body?.date ?? req.body?.run_date ?? row.run_date).trim();
+        const runType = req.body?.runType ?? req.body?.run_type ?? row.run_type;
+        const distanceKm = Number(req.body?.distanceKm ?? req.body?.distance_km);
+        const durationSec = Number(req.body?.durationSec ?? req.body?.duration_sec);
+        const noteRaw = req.body?.note;
+        const note = noteRaw == null || noteRaw === "" ? null : String(noteRaw).trim();
+        const missionMonth = String(req.body?.missionMonth ?? req.body?.mission_month ?? runDate.slice(0, 7)).trim();
+
+        if (!runDate || !/^\d{4}-\d{2}-\d{2}$/.test(runDate)) {
+          return res.status(400).json({ error: "วันที่ไม่ถูกต้อง" });
+        }
+        if (!isRunDateAllowed(runDate, undefined, row.run_date)) {
+          return res.status(400).json({ error: "วันที่อยู่นอกช่วงที่อนุญาตให้บันทึก" });
+        }
+        if (runType !== "discipline" && runType !== "mission") {
+          return res.status(400).json({ error: "ประเภทการวิ่งไม่ถูกต้อง" });
+        }
+        if (!distanceKm || distanceKm <= 0) {
+          return res.status(400).json({ error: "ระยะทางต้องมากกว่า 0" });
+        }
+        if (!durationSec || durationSec <= 0) {
+          return res.status(400).json({ error: "เวลาที่ใช้ต้องมากกว่า 0" });
+        }
+        if (!/^\d{4}-\d{2}$/.test(missionMonth)) {
+          return res.status(400).json({ error: "เดือนภารกิจไม่ถูกต้อง" });
+        }
+
+        let rejectNote: string | null = null;
+        if (nextStatus === "rejected") {
+          rejectNote = String(req.body?.rejectNote ?? row.reject_note ?? "").trim();
+          if (!rejectNote) {
+            return res.status(400).json({ error: "กรุณาระบุเหตุผลที่ไม่ผ่าน" });
+          }
+        }
+
+        await snapshotEntry(supabase, "run", id, row as unknown as Record<string, unknown>, auth.sub, "staff_edit");
+
+        const { data: updated, error: updateError } = await supabase
+          .from("run_entries")
+          .update({
+            run_date: runDate,
+            run_type: runType,
+            distance_km: distanceKm,
+            duration_sec: durationSec,
+            mission_month: missionMonth,
+            note,
+            ...approvalFieldsForStatus(nextStatus, auth.sub, { rejectNote }),
+          })
+          .eq("id", id)
+          .select("*")
+          .single();
+
+        if (updateError) {
+          console.error("run staff edit error:", updateError);
+          return res.status(500).json({ error: "ไม่สามารถบันทึกการแก้ไขได้" });
+        }
+
+        await supabase.from("audit_log").insert({
+          actor_id: auth.sub,
+          action: "run.staff_edit",
+          target_type: "run",
+          target_id: id,
+          metadata: { status: nextStatus },
+        });
+
+        const views = await loadAttachmentViews(supabase, "run", [id]);
+        return res.status(200).json({ run: mapRun(updated as DbRunRow, views.get(id)) });
       }
 
-      const allowed = await canAccessEmployee(supabase, auth.sub, row.employee_id, true);
-      if (!allowed) return res.status(403).json({ error: "ไม่มีสิทธิ์จัดการรายการนี้" });
+      if (!canApproveEntries(auth)) {
+        return res.status(403).json({ error: "เฉพาะหัวหน้าทีมเท่านั้น" });
+      }
 
       const status = req.body?.status;
       if (status !== "approved" && status !== "rejected") {
@@ -130,6 +215,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (!canLeadReject(row.status)) {
         return res.status(400).json({ error: "ไม่สามารถปฏิเสธรายการนี้ได้" });
+      }
+
+      if (row.status === "approved" && !canRejectApproved(auth)) {
+        return res.status(403).json({ error: "เฉพาะ Admin เท่านั้นที่สามารถไม่อนุมัติรายการที่อนุมัติแล้วได้" });
+      }
+      if (row.status === "pending" && !canRejectPending(auth)) {
+        return res.status(403).json({ error: "ไม่มีสิทธิ์ไม่อนุมัติรายการนี้" });
       }
 
       const rejectNote = String(req.body?.rejectNote ?? "").trim();

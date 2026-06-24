@@ -1,47 +1,127 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Image as ImageIcon, Images, Footprints, Scale, ChevronRight, ChevronLeft, Inbox, X,
-  CheckCircle2, AlertTriangle, Clock, Loader2,
+  CheckCircle2, AlertTriangle, Clock, Loader2, Search,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { missionName } from "@/lib/missions";
+import { missionName, runDateBounds } from "@/lib/missions";
 import {
   setRunEntryStatus, setWeightEntryStatus,
   fetchRuns, fetchWeights,
+  staffEditRunEntry, staffEditWeightEntry,
   RUN_TYPE_LABEL, ENTRY_STATUS_LABEL,
-  type RunEntry, type WeightEntry, type EntryStatus,
+  type RunEntry, type WeightEntry, type EntryStatus, type RunType,
 } from "@/lib/entries";
 import { useRuns, useWeights } from "@/lib/hooks/useEntries";
 import { useSubordinates } from "@/lib/hooks/useTeam";
 import { formatThaiDate, formatThaiDateTime, formatDurationThai } from "@/lib/utils";
-import { Card, Badge, Button, LoadingBlock } from "@/components/ui";
+import { Card, Badge, Button, LoadingBlock, Field, Input, Select } from "@/components/ui";
+import { DateSelect } from "@/components/DateSelect";
 import { cn } from "@/lib/utils";
 
+type WorkStatusFilter = "all" | EntryStatus;
+
+interface MemberWorkStatus {
+  pending: boolean;
+  approved: boolean;
+  rejected: boolean;
+}
+
+interface StatusTotals {
+  pending: number;
+  approved: number;
+  rejected: number;
+}
+
+const EMPTY_STATUS_TOTALS: StatusTotals = { pending: 0, approved: 0, rejected: 0 };
+
+function memberHasWorkStatus(flags: MemberWorkStatus | undefined, filter: WorkStatusFilter): boolean {
+  if (filter === "all") return true;
+  return flags?.[filter] ?? false;
+}
+
 export default function Admin() {
-  const { user } = useAuth();
+  const { user, isLead, isAdmin, isSuperAdmin } = useAuth();
+  const canRejectPending = isLead || isAdmin;
+  const canRejectApproved = isAdmin || isSuperAdmin;
+  const canEditRejected = isAdmin || isSuperAdmin;
   const { team, loading: teamLoading } = useSubordinates(user?.id);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [gallery, setGallery] = useState<{ images: string[]; index: number } | null>(null);
   const [runCounts, setRunCounts] = useState<Record<string, number>>({});
   const [pendingCounts, setPendingCounts] = useState<Record<string, number>>({});
+  const [workStatusByMember, setWorkStatusByMember] = useState<Record<string, MemberWorkStatus>>({});
+  const [statusTotals, setStatusTotals] = useState<StatusTotals>(EMPTY_STATUS_TOTALS);
   const [countsLoading, setCountsLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<WorkStatusFilter>("all");
   const openGallery = (images: string[]) => images.length > 0 && setGallery({ images, index: 0 });
 
-  useEffect(() => {
-    if (team.length > 0 && !selectedId) setSelectedId(team[0].id);
-  }, [team, selectedId]);
+  const filteredTeam = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return team.filter((member) => {
+      if (q && !member.id.toLowerCase().includes(q) && !member.name.toLowerCase().includes(q)) {
+        return false;
+      }
+      if (countsLoading || statusFilter === "all") return true;
+      return memberHasWorkStatus(workStatusByMember[member.id], statusFilter);
+    });
+  }, [team, searchQuery, statusFilter, workStatusByMember, countsLoading]);
 
-  const selected = team.find((t) => t.id === selectedId);
+  useEffect(() => {
+    if (filteredTeam.length === 0) {
+      setSelectedId(null);
+      return;
+    }
+    if (!selectedId || !filteredTeam.some((m) => m.id === selectedId)) {
+      setSelectedId(filteredTeam[0].id);
+    }
+  }, [filteredTeam, selectedId]);
+
+  const selected = filteredTeam.find((t) => t.id === selectedId) ?? team.find((t) => t.id === selectedId);
   const adminFetchOpts = { listenChanges: false } as const;
   const { runs, loading: runsLoading, patchRun } = useRuns(selected?.id, adminFetchOpts);
   const { weights, loading: weightsLoading, patchWeight } = useWeights(selected?.id, undefined, adminFetchOpts);
   const runsInitialLoading = !!selected && runsLoading && runs.length === 0;
   const weightsInitialLoading = !!selected && weightsLoading && weights.length === 0;
 
+  const filteredRuns = useMemo(
+    () => (statusFilter === "all" ? runs : runs.filter((r) => r.status === statusFilter)),
+    [runs, statusFilter],
+  );
+  const filteredWeights = useMemo(
+    () => (statusFilter === "all" ? weights : weights.filter((w) => w.status === statusFilter)),
+    [weights, statusFilter],
+  );
+
   const bumpPending = useCallback((memberId: string, delta: number) => {
     setPendingCounts((prev) => ({
       ...prev,
       [memberId]: Math.max(0, (prev[memberId] ?? 0) + delta),
+    }));
+  }, []);
+
+  const shiftStatusTotals = useCallback((from: EntryStatus, to: EntryStatus) => {
+    setStatusTotals((prev) => ({
+      ...prev,
+      [from]: Math.max(0, prev[from] - 1),
+      [to]: prev[to] + 1,
+    }));
+  }, []);
+
+  const refreshMemberWorkStatus = useCallback(async (memberId: string) => {
+    const [memberRuns, memberWeights] = await Promise.all([
+      fetchRuns(memberId),
+      fetchWeights(memberId),
+    ]);
+    const entries = [...memberRuns, ...memberWeights];
+    setWorkStatusByMember((prev) => ({
+      ...prev,
+      [memberId]: {
+        pending: entries.some((e) => e.status === "pending"),
+        approved: entries.some((e) => e.status === "approved"),
+        rejected: entries.some((e) => e.status === "rejected"),
+      },
     }));
   }, []);
 
@@ -56,13 +136,15 @@ export default function Admin() {
       if (wasPending) bumpPending(run.employeeId, -1);
       try {
         await setRunEntryStatus(run.id, status, rejectNote);
+        shiftStatusTotals(run.status, status);
+        await refreshMemberWorkStatus(run.employeeId);
       } catch (e) {
         patchRun(run.id, snapshot);
         if (wasPending) bumpPending(run.employeeId, 1);
         throw e;
       }
     },
-    [patchRun, bumpPending],
+    [patchRun, bumpPending, shiftStatusTotals, refreshMemberWorkStatus],
   );
 
   const applyWeightStatus = useCallback(
@@ -76,18 +158,89 @@ export default function Admin() {
       if (wasPending) bumpPending(weight.employeeId, -1);
       try {
         await setWeightEntryStatus(weight.id, status, rejectNote);
+        shiftStatusTotals(weight.status, status);
+        await refreshMemberWorkStatus(weight.employeeId);
       } catch (e) {
         patchWeight(weight.id, snapshot);
         if (wasPending) bumpPending(weight.employeeId, 1);
         throw e;
       }
     },
-    [patchWeight, bumpPending],
+    [patchWeight, bumpPending, shiftStatusTotals, refreshMemberWorkStatus],
   );
+
+  const applyStaffEditRun = useCallback(
+    async (
+      run: RunEntry,
+      patch: {
+        date: string;
+        runType: RunType;
+        distanceKm: number;
+        durationSec: number;
+        note?: string;
+        missionMonth?: string;
+        status: EntryStatus;
+        rejectNote?: string;
+      },
+    ) => {
+      const prevStatus = run.status;
+      patchRun(run.id, {
+        ...patch,
+        missionTag: patch.missionMonth ?? patch.date.slice(0, 7),
+        rejectNote: patch.status === "rejected" ? patch.rejectNote : undefined,
+      });
+      if (patch.status === "pending" && prevStatus !== "pending") bumpPending(run.employeeId, 1);
+      try {
+        const updated = await staffEditRunEntry(run.id, patch);
+        patchRun(run.id, updated);
+        if (prevStatus !== patch.status) shiftStatusTotals(prevStatus, patch.status);
+        await refreshMemberWorkStatus(run.employeeId);
+      } catch (e) {
+        patchRun(run.id, run);
+        if (patch.status === "pending" && prevStatus !== "pending") bumpPending(run.employeeId, -1);
+        throw e;
+      }
+    },
+    [patchRun, bumpPending, shiftStatusTotals, refreshMemberWorkStatus],
+  );
+
+  const applyStaffEditWeight = useCallback(
+    async (
+      weight: WeightEntry,
+      patch: { weightKg: number; status: EntryStatus; rejectNote?: string },
+    ) => {
+      const prevStatus = weight.status;
+      patchWeight(weight.id, {
+        weightKg: patch.weightKg,
+        status: patch.status,
+        rejectNote: patch.status === "rejected" ? patch.rejectNote : undefined,
+      });
+      if (patch.status === "pending" && prevStatus !== "pending") bumpPending(weight.employeeId, 1);
+      try {
+        const updated = await staffEditWeightEntry(weight.id, patch);
+        patchWeight(weight.id, updated);
+        if (prevStatus !== patch.status) shiftStatusTotals(prevStatus, patch.status);
+        await refreshMemberWorkStatus(weight.employeeId);
+      } catch (e) {
+        patchWeight(weight.id, weight);
+        if (patch.status === "pending" && prevStatus !== "pending") bumpPending(weight.employeeId, -1);
+        throw e;
+      }
+    },
+    [patchWeight, bumpPending, shiftStatusTotals, refreshMemberWorkStatus],
+  );
+
+  function canRejectForStatus(status: EntryStatus): boolean {
+    if (status === "pending") return canRejectPending;
+    if (status === "approved") return canRejectApproved;
+    return false;
+  }
 
   useEffect(() => {
     if (!user || team.length === 0) {
       setCountsLoading(false);
+      setWorkStatusByMember({});
+      setStatusTotals(EMPTY_STATUS_TOTALS);
       return;
     }
     let cancelled = false;
@@ -95,21 +248,34 @@ export default function Admin() {
     const load = async () => {
       const counts: Record<string, number> = {};
       const pending: Record<string, number> = {};
+      const workStatus: Record<string, MemberWorkStatus> = {};
+      const totals: StatusTotals = { pending: 0, approved: 0, rejected: 0 };
       await Promise.all(
         team.map(async (member) => {
           const [memberRuns, memberWeights] = await Promise.all([
             fetchRuns(member.id),
             fetchWeights(member.id),
           ]);
+          const entries = [...memberRuns, ...memberWeights];
           counts[member.id] = memberRuns.length;
           pending[member.id] =
             memberRuns.filter((r) => r.status === "pending").length +
             memberWeights.filter((w) => w.status === "pending").length;
+          workStatus[member.id] = {
+            pending: entries.some((e) => e.status === "pending"),
+            approved: entries.some((e) => e.status === "approved"),
+            rejected: entries.some((e) => e.status === "rejected"),
+          };
+          for (const entry of entries) {
+            totals[entry.status] += 1;
+          }
         }),
       );
       if (!cancelled) {
         setRunCounts(counts);
         setPendingCounts(pending);
+        setWorkStatusByMember(workStatus);
+        setStatusTotals(totals);
         setCountsLoading(false);
       }
     };
@@ -131,18 +297,54 @@ export default function Admin() {
         </p>
       </header>
 
+      <Card className="animate-fade-up p-4">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end">
+          <Field label="รหัสพนักงาน หรือ ชื่อ" htmlFor="team-search" className="min-w-0 flex-1">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="team-search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="ค้นหา…"
+                className="pl-9"
+              />
+            </div>
+          </Field>
+
+          <Field label="สถานะ" htmlFor="team-status" className="w-full shrink-0 sm:w-44">
+            <Select
+              id="team-status"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as WorkStatusFilter)}
+            >
+              <option value="all">ทั้งหมด</option>
+              <option value="pending">{ENTRY_STATUS_LABEL.pending}</option>
+              <option value="approved">{ENTRY_STATUS_LABEL.approved}</option>
+              <option value="rejected">{ENTRY_STATUS_LABEL.rejected}</option>
+            </Select>
+          </Field>
+
+          <StatusTotalsSummary totals={statusTotals} loading={countsLoading} />
+        </div>
+      </Card>
+
       <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
         {/* Team list */}
-        <aside className="space-y-2">
+        <aside className="space-y-3">
           <p className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            สมาชิกในทีม · {teamLoading ? "…" : `${team.length} คน`}
+            สมาชิกในทีม · {teamLoading ? "…" : `${filteredTeam.length}/${team.length} คน`}
           </p>
           {teamLoading ? (
             <Card>
               <LoadingBlock compact label="กำลังโหลดทีม…" />
             </Card>
+          ) : filteredTeam.length === 0 ? (
+            <Card className="p-4 text-center text-sm text-muted-foreground">
+              ไม่พบสมาชิกที่ตรงกับตัวกรอง
+            </Card>
           ) : (
-          team.map((member) => {
+          filteredTeam.map((member) => {
             const count = runCounts[member.id] ?? 0;
             const pending = pendingCounts[member.id] ?? 0;
             const active = member.id === selectedId;
@@ -192,8 +394,8 @@ export default function Admin() {
                   <p className="text-sm text-muted-foreground">{selected.position} · {selected.department}</p>
                 </div>
                 <div className="flex gap-2">
-                  <Badge tone="accent"><Footprints className="h-3 w-3" /> {runs.length} วิ่ง</Badge>
-                  <Badge tone="neutral"><Scale className="h-3 w-3" /> {weights.length} น้ำหนัก</Badge>
+                  <Badge tone="accent"><Footprints className="h-3 w-3" /> {filteredRuns.length} วิ่ง</Badge>
+                  <Badge tone="neutral"><Scale className="h-3 w-3" /> {filteredWeights.length} น้ำหนัก</Badge>
                 </div>
               </div>
 
@@ -203,12 +405,20 @@ export default function Admin() {
                   <Card>
                     <LoadingBlock compact label="กำลังโหลดรายการวิ่ง…" />
                   </Card>
-                ) : runs.length === 0 ? (
-                  <EmptyState text="ยังไม่มีการบันทึกการวิ่ง" />
+                ) : filteredRuns.length === 0 ? (
+                  <EmptyState text={runs.length === 0 ? "ยังไม่มีการบันทึกการวิ่ง" : "ไม่มีรายการวิ่งที่ตรงกับตัวกรอง"} />
                 ) : (
                   <Card className="divide-y divide-border overflow-hidden">
-                    {runs.map((r) => (
-                      <RunRow key={r.id} run={r} onPreview={openGallery} onStatusChange={applyRunStatus} />
+                    {filteredRuns.map((r) => (
+                      <RunRow
+                        key={r.id}
+                        run={r}
+                        canReject={canRejectForStatus(r.status)}
+                        canEdit={canEditRejected && r.status === "rejected"}
+                        onPreview={openGallery}
+                        onStatusChange={applyRunStatus}
+                        onStaffEdit={applyStaffEditRun}
+                      />
                     ))}
                   </Card>
                 )}
@@ -220,12 +430,20 @@ export default function Admin() {
                   <Card>
                     <LoadingBlock compact label="กำลังโหลดน้ำหนัก…" />
                   </Card>
-                ) : weights.length === 0 ? (
-                  <EmptyState text="ยังไม่มีการบันทึกน้ำหนัก" />
+                ) : filteredWeights.length === 0 ? (
+                  <EmptyState text={weights.length === 0 ? "ยังไม่มีการบันทึกน้ำหนัก" : "ไม่มีรายการน้ำหนักที่ตรงกับตัวกรอง"} />
                 ) : (
                   <Card className="divide-y divide-border overflow-hidden">
-                    {weights.map((w) => (
-                      <WeightRow key={w.id} weight={w} onPreview={openGallery} onStatusChange={applyWeightStatus} />
+                    {filteredWeights.map((w) => (
+                      <WeightRow
+                        key={w.id}
+                        weight={w}
+                        canReject={canRejectForStatus(w.status)}
+                        canEdit={canEditRejected && w.status === "rejected"}
+                        onPreview={openGallery}
+                        onStatusChange={applyWeightStatus}
+                        onStaffEdit={applyStaffEditWeight}
+                      />
                     ))}
                   </Card>
                 )}
@@ -336,13 +554,19 @@ function Gallery({
 function StatusControls({
   status,
   busy,
+  canReject,
+  canEdit,
   onApprove,
   onReject,
+  onEdit,
 }: {
   status: EntryStatus;
   busy?: boolean;
+  canReject: boolean;
+  canEdit?: boolean;
   onApprove: () => void;
   onReject: () => void;
+  onEdit?: () => void;
 }) {
   if (status === "pending") {
     return (
@@ -351,9 +575,11 @@ function StatusControls({
         <Button size="sm" onClick={onApprove} disabled={busy} className="h-8 px-2.5 text-xs">
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "อนุมัติ"}
         </Button>
-        <Button size="sm" variant="outline" onClick={onReject} disabled={busy} className="h-8 px-2.5 text-xs">
-          ไม่ผ่าน
-        </Button>
+        {canReject && (
+          <Button size="sm" variant="outline" onClick={onReject} disabled={busy} className="h-8 px-2.5 text-xs">
+            ไม่ผ่าน
+          </Button>
+        )}
       </div>
     );
   }
@@ -361,14 +587,23 @@ function StatusControls({
     return (
       <div className="flex flex-wrap items-center justify-end gap-1.5">
         <Badge tone="success"><CheckCircle2 className="h-3 w-3" /> {ENTRY_STATUS_LABEL.approved}</Badge>
-        <Button size="sm" variant="outline" onClick={onReject} disabled={busy} className="h-8 px-2.5 text-xs">
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "ไม่ผ่าน"}
-        </Button>
+        {canReject && (
+          <Button size="sm" variant="outline" onClick={onReject} disabled={busy} className="h-8 px-2.5 text-xs">
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "ไม่ผ่าน"}
+          </Button>
+        )}
       </div>
     );
   }
   return (
-    <Badge tone="danger"><AlertTriangle className="h-3 w-3" /> {ENTRY_STATUS_LABEL.rejected}</Badge>
+    <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <Badge tone="danger"><AlertTriangle className="h-3 w-3" /> {ENTRY_STATUS_LABEL.rejected}</Badge>
+      {canEdit && onEdit && (
+        <Button size="sm" variant="outline" onClick={onEdit} disabled={busy} className="h-8 px-2.5 text-xs">
+          แก้ไข
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -385,24 +620,158 @@ function askRejectReason(): string | null {
 
 function RunRow({
   run,
+  canReject,
+  canEdit,
   onPreview,
   onStatusChange,
+  onStaffEdit,
 }: {
   run: RunEntry;
+  canReject: boolean;
+  canEdit: boolean;
   onPreview: (images: string[]) => void;
   onStatusChange: (run: RunEntry, status: EntryStatus, rejectNote?: string) => Promise<void>;
+  onStaffEdit: (
+    run: RunEntry,
+    patch: {
+      date: string;
+      runType: RunType;
+      distanceKm: number;
+      durationSec: number;
+      note?: string;
+      missionMonth?: string;
+      status: EntryStatus;
+      rejectNote?: string;
+    },
+  ) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const bounds = useMemo(() => runDateBounds(), []);
+  const [date, setDate] = useState(run.date);
+  const [runType, setRunType] = useState<RunType>(run.runType);
+  const [distanceKm, setDistanceKm] = useState(String(run.distanceKm));
+  const [h, setH] = useState(String(Math.floor(run.durationSec / 3600)));
+  const [m, setM] = useState(String(Math.floor((run.durationSec % 3600) / 60)));
+  const [s, setS] = useState(String(run.durationSec % 60));
+  const [note, setNote] = useState(run.note ?? "");
+  const [status, setStatus] = useState<EntryStatus>(run.status);
+  const [rejectNote, setRejectNote] = useState(run.rejectNote ?? "");
+
+  useEffect(() => {
+    if (!editing) return;
+    setDate(run.date);
+    setRunType(run.runType);
+    setDistanceKm(String(run.distanceKm));
+    setH(String(Math.floor(run.durationSec / 3600)));
+    setM(String(Math.floor((run.durationSec % 3600) / 60)));
+    setS(String(run.durationSec % 60));
+    setNote(run.note ?? "");
+    setStatus(run.status);
+    setRejectNote(run.rejectNote ?? "");
+  }, [editing, run]);
 
   async function act(action: () => Promise<void>) {
     setBusy(true);
     try {
       await action();
     } catch {
-      window.alert("บันทึกสถานะไม่สำเร็จ กรุณาลองใหม่");
+      window.alert("บันทึกไม่สำเร็จ กรุณาลองใหม่");
     } finally {
       setBusy(false);
     }
+  }
+
+  function openEdit() {
+    setEditing(true);
+  }
+
+  async function saveEdit() {
+    const dist = Number(distanceKm);
+    const durationSec = (Number(h) || 0) * 3600 + (Number(m) || 0) * 60 + (Number(s) || 0);
+    if (!dist || dist <= 0) {
+      window.alert("ระยะทางต้องมากกว่า 0");
+      return;
+    }
+    if (!durationSec || durationSec <= 0) {
+      window.alert("เวลาที่ใช้ต้องมากกว่า 0");
+      return;
+    }
+    if (status === "rejected" && !rejectNote.trim()) {
+      window.alert("กรุณาระบุเหตุผลที่ไม่ผ่าน");
+      return;
+    }
+    await act(async () => {
+      await onStaffEdit(run, {
+        date,
+        runType,
+        distanceKm: dist,
+        durationSec,
+        note: note.trim() || undefined,
+        missionMonth: date.slice(0, 7),
+        status,
+        rejectNote: status === "rejected" ? rejectNote.trim() : undefined,
+      });
+      setEditing(false);
+    });
+  }
+
+  if (editing) {
+    return (
+      <div className="space-y-3 p-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="วันที่">
+            <DateSelect value={date} min={bounds.min} max={bounds.max} onChange={setDate} />
+          </Field>
+          <Field label="ประเภท">
+            <Select value={runType} onChange={(e) => setRunType(e.target.value as RunType)}>
+              <option value="discipline">{RUN_TYPE_LABEL.discipline}</option>
+              <option value="mission">{RUN_TYPE_LABEL.mission}</option>
+            </Select>
+          </Field>
+          <Field label="ระยะทาง (กม.)">
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              value={distanceKm}
+              onChange={(e) => setDistanceKm(e.target.value)}
+              className="tnum"
+            />
+          </Field>
+          <Field label="เวลา (ชม. : นาที : วินาที)">
+            <div className="flex gap-2">
+              <Input type="number" min="0" value={h} onChange={(e) => setH(e.target.value)} className="tnum w-16" placeholder="ชม." />
+              <Input type="number" min="0" max="59" value={m} onChange={(e) => setM(e.target.value)} className="tnum w-16" placeholder="น." />
+              <Input type="number" min="0" max="59" value={s} onChange={(e) => setS(e.target.value)} className="tnum w-16" placeholder="ว." />
+            </div>
+          </Field>
+          <Field label="หมายเหตุ" className="sm:col-span-2">
+            <Input value={note} onChange={(e) => setNote(e.target.value)} />
+          </Field>
+          <Field label="สถานะ">
+            <Select value={status} onChange={(e) => setStatus(e.target.value as EntryStatus)}>
+              <option value="pending">{ENTRY_STATUS_LABEL.pending}</option>
+              <option value="approved">{ENTRY_STATUS_LABEL.approved}</option>
+              <option value="rejected">{ENTRY_STATUS_LABEL.rejected}</option>
+            </Select>
+          </Field>
+          {status === "rejected" && (
+            <Field label="เหตุผลที่ไม่ผ่าน" className="sm:col-span-2">
+              <Input value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} />
+            </Field>
+          )}
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="outline" onClick={() => setEditing(false)} disabled={busy}>
+            ยกเลิก
+          </Button>
+          <Button size="sm" onClick={() => void saveEdit()} disabled={busy}>
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "บันทึก"}
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -428,12 +797,15 @@ function RunRow({
         <StatusControls
           status={run.status}
           busy={busy}
+          canReject={canReject}
+          canEdit={canEdit}
           onApprove={() => void act(() => onStatusChange(run, "approved"))}
           onReject={() => {
             const r = askRejectReason();
             if (r === null) return;
             void act(() => onStatusChange(run, "rejected", r));
           }}
+          onEdit={openEdit}
         />
       </div>
       {run.status === "rejected" && run.rejectNote && (
@@ -445,24 +817,107 @@ function RunRow({
 
 function WeightRow({
   weight,
+  canReject,
+  canEdit,
   onPreview,
   onStatusChange,
+  onStaffEdit,
 }: {
   weight: WeightEntry;
+  canReject: boolean;
+  canEdit: boolean;
   onPreview: (images: string[]) => void;
   onStatusChange: (weight: WeightEntry, status: EntryStatus, rejectNote?: string) => Promise<void>;
+  onStaffEdit: (
+    weight: WeightEntry,
+    patch: { weightKg: number; status: EntryStatus; rejectNote?: string },
+  ) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [weightKg, setWeightKg] = useState(String(weight.weightKg));
+  const [status, setStatus] = useState<EntryStatus>(weight.status);
+  const [rejectNote, setRejectNote] = useState(weight.rejectNote ?? "");
+
+  useEffect(() => {
+    if (!editing) return;
+    setWeightKg(String(weight.weightKg));
+    setStatus(weight.status);
+    setRejectNote(weight.rejectNote ?? "");
+  }, [editing, weight]);
 
   async function act(action: () => Promise<void>) {
     setBusy(true);
     try {
       await action();
     } catch {
-      window.alert("บันทึกสถานะไม่สำเร็จ กรุณาลองใหม่");
+      window.alert("บันทึกไม่สำเร็จ กรุณาลองใหม่");
     } finally {
       setBusy(false);
     }
+  }
+
+  function openEdit() {
+    setEditing(true);
+  }
+
+  async function saveEdit() {
+    const kg = Number(weightKg);
+    if (!kg || kg <= 0) {
+      window.alert("น้ำหนักต้องมากกว่า 0");
+      return;
+    }
+    if (status === "rejected" && !rejectNote.trim()) {
+      window.alert("กรุณาระบุเหตุผลที่ไม่ผ่าน");
+      return;
+    }
+    await act(async () => {
+      await onStaffEdit(weight, {
+        weightKg: kg,
+        status,
+        rejectNote: status === "rejected" ? rejectNote.trim() : undefined,
+      });
+      setEditing(false);
+    });
+  }
+
+  if (editing) {
+    return (
+      <div className="space-y-3 p-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="น้ำหนัก (กก.)">
+            <Input
+              type="number"
+              step="0.1"
+              min="0"
+              value={weightKg}
+              onChange={(e) => setWeightKg(e.target.value)}
+              className="tnum"
+            />
+          </Field>
+          <Field label="สถานะ">
+            <Select value={status} onChange={(e) => setStatus(e.target.value as EntryStatus)}>
+              <option value="pending">{ENTRY_STATUS_LABEL.pending}</option>
+              <option value="approved">{ENTRY_STATUS_LABEL.approved}</option>
+              <option value="rejected">{ENTRY_STATUS_LABEL.rejected}</option>
+            </Select>
+          </Field>
+          {status === "rejected" && (
+            <Field label="เหตุผลที่ไม่ผ่าน" className="sm:col-span-2">
+              <Input value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} />
+            </Field>
+          )}
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="outline" onClick={() => setEditing(false)} disabled={busy}>
+            ยกเลิก
+          </Button>
+          <Button size="sm" onClick={() => void saveEdit()} disabled={busy}>
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "บันทึก"}
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -482,12 +937,15 @@ function WeightRow({
         <StatusControls
           status={weight.status}
           busy={busy}
+          canReject={canReject}
+          canEdit={canEdit}
           onApprove={() => void act(() => onStatusChange(weight, "approved"))}
           onReject={() => {
             const r = askRejectReason();
             if (r === null) return;
             void act(() => onStatusChange(weight, "rejected", r));
           }}
+          onEdit={openEdit}
         />
       </div>
       {weight.status === "rejected" && weight.rejectNote && (
@@ -544,6 +1002,39 @@ function EmptyState({ text }: { text: string }) {
         <Inbox className="h-5 w-5" />
       </span>
       <p className="text-sm text-muted-foreground">{text}</p>
+    </div>
+  );
+}
+
+function StatusTotalsSummary({ totals, loading }: { totals: StatusTotals; loading: boolean }) {
+  const items: { status: EntryStatus; tone: "warning" | "success" | "danger"; icon: typeof Clock }[] = [
+    { status: "pending", tone: "warning", icon: Clock },
+    { status: "approved", tone: "success", icon: CheckCircle2 },
+    { status: "rejected", tone: "danger", icon: AlertTriangle },
+  ];
+
+  return (
+    <div className="w-full shrink-0 xl:w-auto">
+      <p className="mb-1.5 text-sm font-medium text-foreground">สรุปรายการ</p>
+      <div className="flex flex-wrap gap-2">
+        {items.map(({ status, tone, icon: Icon }) => (
+          <div
+            key={status}
+            className="flex min-w-[7.5rem] items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2"
+          >
+            <Icon className={cn(
+              "h-4 w-4 shrink-0",
+              tone === "warning" && "text-warning",
+              tone === "success" && "text-success",
+              tone === "danger" && "text-danger",
+            )} />
+            <div className="min-w-0">
+              <p className="text-[11px] leading-tight text-muted-foreground">{ENTRY_STATUS_LABEL[status]}</p>
+              <p className="tnum text-sm font-bold text-foreground">{loading ? "…" : totals[status]}</p>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

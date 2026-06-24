@@ -15,13 +15,17 @@ import SuperAdmin from "@/pages/SuperAdmin";
 import Export from "@/pages/Export";
 import EmployeeAdmin from "@/pages/EmployeeAdmin";
 
+function canManageTeam(isLead: boolean, isAdmin: boolean): boolean {
+  return isLead || isAdmin;
+}
+
 /** จำนวนรายการรออนุมัติของทีม สำหรับ badge บนเมนู "ข้อมูลทีม" */
-function usePendingTeamCount(userId: string | undefined, isLead: boolean): number {
-  const { team } = useSubordinates(isLead ? userId : undefined);
+function usePendingTeamCount(userId: string | undefined, canManage: boolean): number {
+  const { team } = useSubordinates(canManage ? userId : undefined);
   const [count, setCount] = useState(0);
 
   useEffect(() => {
-    if (!userId || !isLead || team.length === 0) {
+    if (!userId || !canManage || team.length === 0) {
       setCount(0);
       return;
     }
@@ -42,13 +46,13 @@ function usePendingTeamCount(userId: string | undefined, isLead: boolean): numbe
       cancelled = true;
       window.removeEventListener(DATA_CHANGED_EVENT, onChange);
     };
-  }, [userId, isLead, team]);
+  }, [userId, canManage, team]);
 
   return count;
 }
 
 function ProtectedLayout() {
-  const { user, isLead, isSuperAdmin, loading } = useAuth();
+  const { user, isLead, isAdmin, isSuperAdmin, loading } = useAuth();
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
@@ -58,7 +62,8 @@ function ProtectedLayout() {
   }
   if (!user) return <Navigate to="/" replace />;
 
-  const teamPending = usePendingTeamCount(user.id, isLead);
+  const manageTeam = canManageTeam(isLead, isAdmin);
+  const teamPending = usePendingTeamCount(user.id, manageTeam);
   const rejectedCount = useRejectedEntryCount(user.id);
 
   const nav: NavItem[] = [
@@ -71,7 +76,9 @@ function ProtectedLayout() {
       badge: rejectedCount || undefined,
     },
     { to: "/app/dashboard", label: "Dashboard", short: "Dashboard", icon: BarChart3 },
-    ...(isLead ? [{ to: "/app/admin", label: "ข้อมูลทีม", short: "ทีม", icon: Users, badge: teamPending }] : []),
+    ...(manageTeam
+      ? [{ to: "/app/admin", label: "ข้อมูลทีม", short: "ทีม", icon: Users, badge: teamPending }]
+      : []),
     ...(isSuperAdmin
       ? [
           { to: "/app/employees", label: "จัดการพนักงาน", short: "พนักงาน", icon: UserCog },
@@ -94,9 +101,9 @@ function SuperAdminOnly({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function LeadOnly({ children }: { children: React.ReactNode }) {
-  const { isLead } = useAuth();
-  if (!isLead) return <Navigate to="/app" replace />;
+function TeamManagerOnly({ children }: { children: React.ReactNode }) {
+  const { isLead, isAdmin } = useAuth();
+  if (!canManageTeam(isLead, isAdmin)) return <Navigate to="/app" replace />;
   return <>{children}</>;
 }
 
@@ -112,9 +119,9 @@ export default function App() {
           <Route
             path="admin"
             element={
-              <LeadOnly>
+              <TeamManagerOnly>
                 <Admin />
-              </LeadOnly>
+              </TeamManagerOnly>
             }
           />
           <Route

@@ -1,6 +1,6 @@
 /** Shared types between API handlers */
 
-export type DbRole = "employee" | "super_admin";
+export type DbRole = "employee" | "admin" | "super_admin";
 
 export interface DbEmployee {
   employee_id: string;
@@ -35,11 +35,13 @@ export interface LoginResponse {
   token: string;
   user: AuthUser;
   isLead: boolean;
+  isAdmin: boolean;
   isSuperAdmin: boolean;
 }
 
 export interface MeResponse {
   user: AuthUser;
   isLead: boolean;
+  isAdmin: boolean;
   isSuperAdmin: boolean;
 }

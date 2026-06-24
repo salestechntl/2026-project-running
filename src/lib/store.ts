@@ -7,7 +7,7 @@
  * job then reads rows where status = NEW.
  */
 
-import { EMPLOYEES, isTeamLead, subordinates } from "./data";
+import { EMPLOYEES, findEmployee, isOrgAdmin, isTeamLead, subordinates } from "./data";
 import { currentMonthKey, monthOf, missionName } from "./missions";
 
 /** สถานะการตรวจ: รออนุมัติ / อนุมัติแล้ว / ไม่ผ่าน */
@@ -21,7 +21,8 @@ export const ENTRY_STATUS_LABEL: Record<EntryStatus, string> = {
 
 function resolveStatusForEmployee(employeeId: string, explicit?: EntryStatus): EntryStatus {
   if (explicit) return explicit;
-  return isTeamLead(employeeId) ? "approved" : "pending";
+  const emp = findEmployee(employeeId);
+  return isTeamLead(employeeId) || (emp != null && isOrgAdmin(emp)) ? "approved" : "pending";
 }
 
 /** ประเภทการวิ่ง: วัดวินัย (ค่าเริ่มต้น) / ภารกิจประจำเดือน */
@@ -173,6 +174,46 @@ export function setRunStatus(id: string, status: EntryStatus, rejectNote?: strin
   notifyDataChanged();
 }
 
+/** Admin แก้ไขรายการวิ่งที่ไม่ผ่าน (หน้าทีม) */
+export function staffEditRun(
+  id: string,
+  patch: {
+    date: string;
+    runType: RunType;
+    distanceKm: number;
+    durationSec: number;
+    note?: string;
+    missionMonth?: string;
+    status: EntryStatus;
+    rejectNote?: string;
+  },
+): RunEntry {
+  const rows = read<RunEntry>(RUN_KEY);
+  const idx = rows.findIndex((r) => r.id === id);
+  if (idx < 0) throw new Error("ไม่พบรายการ");
+  const cur = rows[idx];
+  if (cur.status !== "rejected") throw new Error("แก้ไขได้เฉพาะรายการที่ไม่ผ่าน");
+  if (patch.status === "rejected" && !patch.rejectNote?.trim()) {
+    throw new Error("กรุณาระบุเหตุผลที่ไม่ผ่าน");
+  }
+  const missionTag = patch.missionMonth ?? patch.date.slice(0, 7);
+  rows[idx] = {
+    ...cur,
+    date: patch.date,
+    runType: patch.runType,
+    distanceKm: patch.distanceKm,
+    durationSec: patch.durationSec,
+    missionTag,
+    note: patch.note,
+    status: patch.status,
+    rejectNote: patch.status === "rejected" ? patch.rejectNote : undefined,
+    updatedAt: Date.now(),
+  };
+  write(RUN_KEY, rows);
+  notifyDataChanged();
+  return rows[idx];
+}
+
 /* ---------- Weights ---------- */
 export function getWeights(employeeId?: string): WeightEntry[] {
   // เรียงตามเดือนล่าสุดก่อน, แล้วต้นเดือนก่อนสิ้นเดือน
@@ -253,6 +294,35 @@ export function setWeightStatus(id: string, status: EntryStatus, rejectNote?: st
   };
   write(WEIGHT_KEY, rows);
   notifyDataChanged();
+}
+
+/** Admin แก้ไขรายการน้ำหนักที่ไม่ผ่าน (หน้าทีม) */
+export function staffEditWeight(
+  id: string,
+  patch: {
+    weightKg: number;
+    status: EntryStatus;
+    rejectNote?: string;
+  },
+): WeightEntry {
+  const rows = read<WeightEntry>(WEIGHT_KEY);
+  const idx = rows.findIndex((r) => r.id === id);
+  if (idx < 0) throw new Error("ไม่พบรายการ");
+  const cur = rows[idx];
+  if (cur.status !== "rejected") throw new Error("แก้ไขได้เฉพาะรายการที่ไม่ผ่าน");
+  if (patch.status === "rejected" && !patch.rejectNote?.trim()) {
+    throw new Error("กรุณาระบุเหตุผลที่ไม่ผ่าน");
+  }
+  rows[idx] = {
+    ...cur,
+    weightKg: patch.weightKg,
+    status: patch.status,
+    rejectNote: patch.status === "rejected" ? patch.rejectNote : undefined,
+    updatedAt: Date.now(),
+  };
+  write(WEIGHT_KEY, rows);
+  notifyDataChanged();
+  return rows[idx];
 }
 
 /** เดือนปัจจุบัน (อ้างอิงโหมดสาธิตใน missions.ts) */

@@ -42,10 +42,10 @@ function runDateFieldHint(min: string, max: string): string {
 }
 
 /** เจ้าตัวแก้รายการนี้ได้ไหม */
-function canOwnerEditRun(status: EntryStatus, isLead: boolean) {
+function canOwnerEditRun(status: EntryStatus, canSelfManage: boolean) {
   if (status === "rejected") return false;
   if (status === "pending") return true;
-  return isLead;
+  return canSelfManage;
 }
 
 function canOwnerDeleteRun(status: EntryStatus) {
@@ -253,6 +253,7 @@ function RunForm({
   const [progressOpen, setProgressOpen] = useState(false);
   const [progressSteps, setProgressSteps] = useState<SaveStepState[]>(initialRunSaveSteps);
   const [progressError, setProgressError] = useState<string>();
+  const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
   const dateFieldRef = useRef<HTMLDivElement>(null);
 
   const dist = parseFloat(distance) || 0;
@@ -300,9 +301,20 @@ function RunForm({
     return e;
   }
 
-  async function submit(ev: React.FormEvent) {
+  function requestSubmit(ev: React.FormEvent) {
     ev.preventDefault();
     if (!user) return;
+
+    const validationErrors = collectValidationErrors();
+    setErrors(validationErrors);
+    if (Object.keys(validationErrors).length > 0) return;
+
+    setSaveConfirmOpen(true);
+  }
+
+  async function performSave() {
+    if (!user) return;
+    setSaveConfirmOpen(false);
 
     flushSync(() => {
       setSaving(true);
@@ -311,15 +323,6 @@ function RunForm({
       setProgressOpen(true);
     });
 
-    const validationErrors = collectValidationErrors();
-    setErrors(validationErrors);
-    if (Object.keys(validationErrors).length > 0) {
-      const summary = Object.values(validationErrors).join(" · ");
-      patchProgress("validate", "error", summary);
-      setProgressError("กรุณาแก้ไขข้อมูลในฟอร์มก่อนบันทึก");
-      setSaving(false);
-      return;
-    }
     patchProgress("validate", "done", "ข้อมูลครบถ้วน");
 
     try {
@@ -354,7 +357,7 @@ function RunForm({
 
   return (
     <>
-    <form onSubmit={submit} noValidate className="animate-fade-up">
+    <form onSubmit={requestSubmit} noValidate className="animate-fade-up">
       <Card className="space-y-5 p-6">
         {editing && (
           <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5">
@@ -444,6 +447,21 @@ function RunForm({
       </Card>
     </form>
 
+    <ConfirmDialog
+      open={saveConfirmOpen}
+      title={editing ? "ยืนยันการแก้ไข?" : "ยืนยันการบันทึก?"}
+      message={
+        editing
+          ? "ต้องการบันทึกการแก้ไขรายการวิ่งนี้ลงระบบหรือไม่"
+          : "ต้องการบันทึกรายการวิ่งนี้ลงระบบหรือไม่"
+      }
+      confirmLabel={editing ? "บันทึกการแก้ไข" : "บันทึกการวิ่ง"}
+      cancelLabel="ยกเลิก"
+      tone="primary"
+      onConfirm={() => void performSave()}
+      onCancel={() => setSaveConfirmOpen(false)}
+    />
+
     <SaveProgressDialog
       open={progressOpen}
       title={editing ? "กำลังบันทึกการแก้ไข" : "กำลังบันทึกการวิ่ง"}
@@ -469,7 +487,8 @@ const RunHistory = forwardRef(function RunHistory(
   },
   ref: ForwardedRef<HTMLDivElement>,
 ) {
-  const { isLead } = useAuth();
+  const { isLead, isAdmin } = useAuth();
+  const canSelfManage = isLead || isAdmin;
   const [confirmId, setConfirmId] = useState<string | null>(null);
   if (loading) {
     return (
@@ -491,7 +510,7 @@ const RunHistory = forwardRef(function RunHistory(
       </h2>
       <Card className="divide-y divide-border overflow-hidden">
         {runs.map((r) => {
-          const editable = canOwnerEditRun(r.status, isLead);
+          const editable = canOwnerEditRun(r.status, canSelfManage);
           const deletable = canOwnerDeleteRun(r.status);
           return (
             <div key={r.id} className="p-4">
@@ -817,7 +836,8 @@ function WeightCard({
   initial?: WeightEntry;
   onSaved: () => void;
 }) {
-  const { isLead } = useAuth();
+  const { isLead, isAdmin } = useAuth();
+  const canSelfManage = isLead || isAdmin;
   const [weight, setWeight] = useState(initial ? String(initial.weightKg) : "");
   const [image, setImage] = useState<string | undefined>(initial?.proofImage);
   const [imageRef, setImageRef] = useState<string | undefined>(initial?.proofImageRef);
@@ -826,6 +846,7 @@ function WeightCard({
   const [progressOpen, setProgressOpen] = useState(false);
   const [progressSteps, setProgressSteps] = useState<SaveStepState[]>(initialWeightSaveSteps);
   const [progressError, setProgressError] = useState<string>();
+  const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
 
   const label = period === "start" ? "ต้นเดือน" : "สิ้นเดือน";
   const isPending = initial?.status === "pending";
@@ -845,7 +866,7 @@ function WeightCard({
   }, [initial?.id, initial?.updatedAt, initial?.weightKg, initial?.proofImage, initial?.proofImageRef, initial]);
 
   const win = weightWindow(month, period);
-  const editable = isLead ? win.open : win.open && (isPending || !initial);
+  const editable = canSelfManage ? win.open : win.open && (isPending || !initial);
   const disabled = !editable;
 
   function patchProgress(stepId: WeightSaveStepId, status: SaveStepStatus, detail?: string) {
@@ -860,7 +881,23 @@ function WeightCard({
     setProgressError(undefined);
   }
 
-  async function submit() {
+  function requestSave() {
+    const w = parseFloat(weight);
+    if (!w || w <= 0) {
+      setError("กรอกน้ำหนัก");
+      return;
+    }
+    if (!image) {
+      setError("แนบภาพน้ำหนัก");
+      return;
+    }
+    setError(undefined);
+    setSaveConfirmOpen(true);
+  }
+
+  async function performSave() {
+    setSaveConfirmOpen(false);
+
     flushSync(() => {
       setSaving(true);
       setProgressError(undefined);
@@ -988,11 +1025,26 @@ function WeightCard({
           }}
           disabled={disabled}
         />
-        <Button onClick={submit} variant={isPending ? "outline" : "primary"} disabled={saving || disabled} className="mt-auto">
+        <Button type="button" onClick={requestSave} variant={isPending ? "outline" : "primary"} disabled={saving || disabled} className="mt-auto">
           {saving ? "กำลังบันทึก…" : disabled ? "ยังกรอกไม่ได้" : isPending ? "อัปเดต" : "บันทึก"}
         </Button>
       </fieldset>
     </Card>
+
+    <ConfirmDialog
+      open={saveConfirmOpen}
+      title={isPending ? "ยืนยันการอัปเดต?" : "ยืนยันการบันทึก?"}
+      message={
+        isPending
+          ? `ต้องการบันทึกการแก้ไขน้ำหนัก${label}ลงระบบหรือไม่`
+          : `ต้องการบันทึกน้ำหนัก${label}ลงระบบหรือไม่`
+      }
+      confirmLabel={isPending ? "อัปเดต" : "บันทึก"}
+      cancelLabel="ยกเลิก"
+      tone="primary"
+      onConfirm={() => void performSave()}
+      onCancel={() => setSaveConfirmOpen(false)}
+    />
 
     <SaveProgressDialog
       open={progressOpen}

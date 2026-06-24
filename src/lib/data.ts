@@ -47,7 +47,20 @@ export function isSuperAdmin(emp: Employee): boolean {
   return emp.role === "super_admin";
 }
 
-/** ลูกทีมทั้งสายงาน (recursive) — ลูกน้องตรง + ลูกน้องของลูกน้อง ทุกระดับ */
+export function isOrgAdmin(emp: Pick<Employee, "role">): boolean {
+  return emp.role === "admin";
+}
+
+/** ลูกทีมทั้งสายงาน หรือทั้งองค์กรสำหรับ role admin */
+export function teamRoster(actorId: string): Employee[] {
+  const emp = findEmployee(actorId);
+  if (emp && isOrgAdmin(emp)) {
+    return EMPLOYEES.filter((e) => e.id !== actorId).sort((a, b) => a.name.localeCompare(b.name, "th"));
+  }
+  return subordinates(actorId);
+}
+
+/** ลูกทีมทั้งสายงาน (recursive) */
 export function subordinates(id: string): Employee[] {
   const out: Employee[] = [];
   const visit = (managerId: string) => {

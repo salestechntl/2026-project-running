@@ -9,11 +9,12 @@ import { Stat, LoadingBlock, Card } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 export default function Home() {
-  const { user, isLead } = useAuth();
+  const { user, isLead, isAdmin } = useAuth();
+  const manageTeam = isLead || isAdmin;
   const { runs, loading: runsLoading } = useRuns(user?.id);
   const weighMonth = currentMonthKey();
   const { weights: weighs, loading: weightsLoading } = useWeights(user?.id, weighMonth);
-  const { team, loading: teamLoading } = useSubordinates(isLead ? user?.id : undefined);
+  const { team, loading: teamLoading } = useSubordinates(manageTeam ? user?.id : undefined);
 
   if (!user) return null;
 
@@ -42,12 +43,12 @@ export default function Home() {
       desc: "ดูสถิติและภาพรวมผลการวิ่งบน Tableau",
       cta: "เปิด Dashboard",
     },
-    ...(isLead
+    ...(manageTeam
       ? [
           {
             to: "/app/admin",
             icon: Users,
-            title: "ข้อมูลทีมของฉัน",
+            title: isAdmin ? "ข้อมูลทีมทั้งองค์กร" : "ข้อมูลทีมของฉัน",
             desc: `ตรวจสอบรายการที่ลูกทีม ${teamLoading ? "…" : team.length} คนบันทึกเข้ามา`,
             cta: "ดูข้อมูลทีม",
           },

@@ -1,7 +1,12 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAuth } from "../_lib/auth/require.js";
 import { createAdminClient, isSupabaseConfigured } from "../_lib/supabase/admin.js";
-import { fetchActiveEmployees, subordinatesFromRows } from "../_lib/team/access.js";
+import {
+  allEmployeesExcept,
+  fetchActiveEmployees,
+  isOrgAdmin,
+  subordinatesFromRows,
+} from "../_lib/team/access.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {
@@ -18,7 +23,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const supabase = createAdminClient();
     const rows = await fetchActiveEmployees(supabase);
-    const team = subordinatesFromRows(auth.sub, rows);
+    const team = isOrgAdmin(auth.role)
+      ? allEmployeesExcept(auth.sub, rows)
+      : subordinatesFromRows(auth.sub, rows);
     return res.status(200).json({ team });
   } catch (err) {
     console.error("subordinates error:", err);

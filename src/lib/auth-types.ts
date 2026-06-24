@@ -1,6 +1,6 @@
 /** API response types (mirrors api/_lib/auth/types.ts) */
 
-export type DbRole = "employee" | "super_admin";
+export type DbRole = "employee" | "admin" | "super_admin";
 
 export interface AuthUser {
   id: string;
@@ -15,12 +15,14 @@ export interface LoginResponse {
   token: string;
   user: AuthUser;
   isLead: boolean;
+  isAdmin: boolean;
   isSuperAdmin: boolean;
 }
 
 export interface MeResponse {
   user: AuthUser;
   isLead: boolean;
+  isAdmin: boolean;
   isSuperAdmin: boolean;
 }
 

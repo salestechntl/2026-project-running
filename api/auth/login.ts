@@ -54,6 +54,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .eq("is_active", true);
 
     const isLead = (count ?? 0) > 0;
+    const isAdmin = emp.role === "admin";
     const isSuperAdmin = emp.role === "super_admin";
 
     const token = signToken({
@@ -71,7 +72,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       action: "auth.login",
       target_type: "employee",
       target_id: emp.employee_id,
-      metadata: { is_lead: isLead, is_super_admin: isSuperAdmin },
+      metadata: { is_lead: isLead, is_admin: isAdmin, is_super_admin: isSuperAdmin },
     });
     if (auditError) console.error("audit_log insert error:", auditError);
 
@@ -79,6 +80,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       token,
       user: toAuthUser(emp as DbEmployee),
       isLead,
+      isAdmin,
       isSuperAdmin,
     };
 
