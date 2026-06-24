@@ -106,12 +106,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const batchId = batch.id as string;
 
-    // Preserve elevated roles for existing employees on org re-import
-    const { data: roles } = await supabase
+    // Preserve elevated roles and passwords for existing employees on org re-import
+    const { data: existingEmployees } = await supabase
       .from("employees")
-      .select("employee_id, role")
-      .in("role", ["super_admin", "admin"]);
-    const roleById = new Map((roles ?? []).map((r) => [r.employee_id as string, r.role as string]));
+      .select("employee_id, role, password_hash");
+    const roleById = new Map(
+      (existingEmployees ?? [])
+        .filter((r) => r.role === "super_admin" || r.role === "admin")
+        .map((r) => [r.employee_id as string, r.role as string]),
+    );
+    const passwordById = new Map(
+      (existingEmployees ?? [])
+        .filter((r) => r.password_hash)
+        .map((r) => [r.employee_id as string, r.password_hash as string]),
+    );
 
     const upsertRows = sortOrgForUpsert(parsed.rows).map((r: OrgRow) => ({
       employee_id: r.employee_id,
@@ -122,6 +130,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       is_active: true,
       import_batch_id: batchId,
       role: roleById.get(r.employee_id) ?? "employee",
+      ...(passwordById.has(r.employee_id) ? { password_hash: passwordById.get(r.employee_id) } : {}),
     }));
 
     const { error: upsertErr } = await supabase.from("employees").upsert(upsertRows, { onConflict: "employee_id" });

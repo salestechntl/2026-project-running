@@ -8,15 +8,17 @@
  */
 
 import { EMPLOYEES, findEmployee, isOrgAdmin, isTeamLead, subordinates } from "./data";
+import { shouldExpirePendingMs } from "./expire";
 import { currentMonthKey, monthOf, missionName } from "./missions";
 
-/** สถานะการตรวจ: รออนุมัติ / อนุมัติแล้ว / ไม่ผ่าน */
-export type EntryStatus = "pending" | "approved" | "rejected";
+/** สถานะการตรวจ: รออนุมัติ / อนุมัติแล้ว / ไม่ผ่าน / หมดอายุ */
+export type EntryStatus = "pending" | "approved" | "rejected" | "expired";
 
 export const ENTRY_STATUS_LABEL: Record<EntryStatus, string> = {
   pending: "รออนุมัติ",
   approved: "อนุมัติแล้ว",
   rejected: "ไม่ผ่าน",
+  expired: "หมดอายุ",
 };
 
 function resolveStatusForEmployee(employeeId: string, explicit?: EntryStatus): EntryStatus {
@@ -84,10 +86,38 @@ function uid(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}${performance.now().toString(36).replace(".", "")}`;
 }
 
+function applyExpiryRuns(rows: RunEntry[]): RunEntry[] {
+  const now = Date.now();
+  let dirty = false;
+  const next = rows.map((r) => {
+    if (r.status === "pending" && shouldExpirePendingMs(r.createdAt, now)) {
+      dirty = true;
+      return { ...r, status: "expired" as const, updatedAt: now };
+    }
+    return r;
+  });
+  if (dirty) write(RUN_KEY, next);
+  return next;
+}
+
+function applyExpiryWeights(rows: WeightEntry[]): WeightEntry[] {
+  const now = Date.now();
+  let dirty = false;
+  const next = rows.map((w) => {
+    if (w.status === "pending" && shouldExpirePendingMs(w.createdAt, now)) {
+      dirty = true;
+      return { ...w, status: "expired" as const, updatedAt: now };
+    }
+    return w;
+  });
+  if (dirty) write(WEIGHT_KEY, next);
+  return next;
+}
+
 /* ---------- Runs ---------- */
 export function getRuns(employeeId?: string): RunEntry[] {
   // เรียงตามวันที่วิ่งล่าสุดก่อน (วันเดียวกันใช้เวลาที่บันทึกล่าสุด)
-  const rows = read<RunEntry>(RUN_KEY).sort(
+  const rows = applyExpiryRuns(read<RunEntry>(RUN_KEY)).sort(
     (a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt,
   );
   return employeeId ? rows.filter((r) => r.employeeId === employeeId) : rows;
@@ -95,7 +125,7 @@ export function getRuns(employeeId?: string): RunEntry[] {
 
 export function getRunsForTeam(employeeIds: string[]): RunEntry[] {
   const set = new Set(employeeIds);
-  return read<RunEntry>(RUN_KEY)
+  return applyExpiryRuns(read<RunEntry>(RUN_KEY))
     .filter((r) => set.has(r.employeeId))
     .sort((a, b) => b.createdAt - a.createdAt);
 }
@@ -114,6 +144,9 @@ export function saveRun(entry: RunInput): RunEntry {
       const cur = rows[idx];
       if (cur.status === "rejected") {
         throw new Error("รายการที่ไม่ผ่านแล้วแก้ไขไม่ได้ กรุณาส่งรายการใหม่");
+      }
+      if (cur.status === "expired") {
+        throw new Error("รายการหมดอายุแล้ว กรุณาส่งรายการใหม่");
       }
       if (!isTeamLead(entry.employeeId) && cur.status !== "pending") {
         throw new Error("แก้ไขได้เฉพาะรายการที่รออนุมัติ");
@@ -161,8 +194,8 @@ export function setRunStatus(id: string, status: EntryStatus, rejectNote?: strin
   const idx = rows.findIndex((r) => r.id === id);
   if (idx < 0) return;
   const cur = rows[idx];
-  if (status === "approved" && cur.status !== "pending") return;
-  if (status === "rejected" && cur.status !== "pending" && cur.status !== "approved") return;
+  if (status === "approved" && cur.status !== "pending" && cur.status !== "expired") return;
+  if (status === "rejected" && cur.status !== "pending" && cur.status !== "approved" && cur.status !== "expired") return;
   if (status === "rejected" && !rejectNote?.trim()) return;
   rows[idx] = {
     ...rows[idx],
@@ -217,7 +250,7 @@ export function staffEditRun(
 /* ---------- Weights ---------- */
 export function getWeights(employeeId?: string): WeightEntry[] {
   // เรียงตามเดือนล่าสุดก่อน, แล้วต้นเดือนก่อนสิ้นเดือน
-  const rows = read<WeightEntry>(WEIGHT_KEY).sort(
+  const rows = applyExpiryWeights(read<WeightEntry>(WEIGHT_KEY)).sort(
     (a, b) => b.month.localeCompare(a.month) || a.period.localeCompare(b.period),
   );
   return employeeId ? rows.filter((r) => r.employeeId === employeeId) : rows;
@@ -237,6 +270,9 @@ export function saveWeight(entry: WeightInput): WeightEntry {
       const cur = rows[idx];
       if (cur.status === "rejected") {
         throw new Error("รายการที่ไม่ผ่านแล้วแก้ไขไม่ได้ กรุณาส่งรายการใหม่");
+      }
+      if (cur.status === "expired") {
+        throw new Error("รายการหมดอายุแล้ว กรุณาส่งรายการใหม่");
       }
       if (!isTeamLead(entry.employeeId) && cur.status !== "pending") {
         throw new Error("แก้ไขได้เฉพาะรายการที่รออนุมัติ");
@@ -283,8 +319,8 @@ export function setWeightStatus(id: string, status: EntryStatus, rejectNote?: st
   const idx = rows.findIndex((r) => r.id === id);
   if (idx < 0) return;
   const cur = rows[idx];
-  if (status === "approved" && cur.status !== "pending") return;
-  if (status === "rejected" && cur.status !== "pending" && cur.status !== "approved") return;
+  if (status === "approved" && cur.status !== "pending" && cur.status !== "expired") return;
+  if (status === "rejected" && cur.status !== "pending" && cur.status !== "approved" && cur.status !== "expired") return;
   if (status === "rejected" && !rejectNote?.trim()) return;
   rows[idx] = {
     ...rows[idx],

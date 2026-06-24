@@ -7,6 +7,7 @@ import {
   normalizeEmployeeInput,
   validateEmployeeInput,
 } from "./_lib/employees/validate.js";
+import { hashPassword, validatePassword } from "./_lib/auth/password.js";
 
 async function loadEmployeeContext(supabase: ReturnType<typeof createAdminClient>) {
   const { data, error } = await supabase
@@ -94,6 +95,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const originalId = String(body.employeeId ?? body.employee_id ?? "").trim();
       if (!originalId) {
         return res.status(400).json({ error: "กรุณาระบุรหัสพนักงาน" });
+      }
+
+      const resetPassword = body.resetPassword ?? body.reset_password;
+      if (resetPassword !== undefined) {
+        const password = String(resetPassword);
+        const passwordError = validatePassword(password);
+        if (passwordError) {
+          return res.status(400).json({ error: passwordError });
+        }
+
+        const { data: existing, error: fetchError } = await supabase
+          .from("employees")
+          .select("*")
+          .eq("employee_id", originalId)
+          .maybeSingle();
+
+        if (fetchError || !existing) {
+          return res.status(404).json({ error: "ไม่พบพนักงาน" });
+        }
+
+        const passwordHash = await hashPassword(password);
+        const { data: updated, error: updateError } = await supabase
+          .from("employees")
+          .update({ password_hash: passwordHash })
+          .eq("employee_id", originalId)
+          .select("*")
+          .single();
+
+        if (updateError) {
+          console.error("employee password reset error:", updateError);
+          return res.status(500).json({ error: "ไม่สามารถรีเซ็ตรหัสผ่านได้" });
+        }
+
+        await supabase.from("audit_log").insert({
+          actor_id: admin.sub,
+          action: "auth.reset_password",
+          target_type: "employee",
+          target_id: originalId,
+        });
+
+        return res.status(200).json({ employee: mapEmployee(updated as DbEmployeeRow) });
       }
 
       const { data: existing, error: fetchError } = await supabase

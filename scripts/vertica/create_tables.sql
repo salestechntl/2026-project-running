@@ -23,7 +23,7 @@ CREATE TABLE running_camp.run_entries (
     duration_sec    INTEGER         NOT NULL,
     mission_month   VARCHAR(7)      NOT NULL,   -- YYYY-MM
     note            VARCHAR(4000),
-    status          VARCHAR(20)     NOT NULL,   -- pending | approved | rejected
+    status          VARCHAR(20)     NOT NULL,   -- pending | approved | rejected | expired
     reject_note     VARCHAR(4000),
     rejected_by     VARCHAR(32),
     approved_by     VARCHAR(32),
@@ -45,7 +45,7 @@ CREATE TABLE running_camp.weight_entries (
     month           VARCHAR(7)      NOT NULL,   -- YYYY-MM
     period          VARCHAR(10)     NOT NULL,   -- start | end
     weight_kg       NUMERIC(5, 1)   NOT NULL,
-    status          VARCHAR(20)     NOT NULL,   -- pending | approved | rejected
+    status          VARCHAR(20)     NOT NULL,   -- pending | approved | rejected | expired
     reject_note     VARCHAR(4000),
     rejected_by     VARCHAR(32),
     approved_by     VARCHAR(32),

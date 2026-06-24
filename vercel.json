@@ -2,6 +2,12 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "crons": [
+    {
+      "path": "/api/runs?expire_all=1",
+      "schedule": "0 17 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/((?!api/|src/|@|node_modules/|assets/|favicon\\.svg|org-template\\.csv).*)",

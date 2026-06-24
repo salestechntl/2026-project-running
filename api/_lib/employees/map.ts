@@ -8,6 +8,7 @@ export interface DbEmployeeRow {
   manager_id: string | null;
   role: DbRole;
   is_active: boolean;
+  password_hash?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -20,6 +21,7 @@ export interface EmployeeDto {
   managerId: string | null;
   role: DbRole;
   isActive: boolean;
+  hasPassword: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -33,6 +35,7 @@ export function mapEmployee(row: DbEmployeeRow): EmployeeDto {
     managerId: row.manager_id,
     role: row.role,
     isActive: row.is_active,
+    hasPassword: Boolean(row.password_hash),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

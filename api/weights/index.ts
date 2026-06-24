@@ -4,6 +4,7 @@ import { createAdminClient, isSupabaseConfigured } from "../_lib/supabase/admin.
 import { canAccessEmployee, canApproveEntries, canSelfApprove } from "../_lib/team/access.js";
 import { mapWeight, validateProofSlot, type DbWeightRow } from "../_lib/entries/map.js";
 import { resolveSubmitStatus } from "../_lib/entries/status.js";
+import { expirePendingEntries } from "../_lib/entries/expire.js";
 import {
   loadAttachmentViews,
   migrateLegacyWeightImage,
@@ -51,6 +52,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const allowed = await canAccessEmployee(supabase, auth.sub, targetId, auth);
       if (!allowed) return res.status(403).json({ error: "ไม่มีสิทธิ์ดูข้อมูลนี้" });
+
+      await expirePendingEntries(supabase, { employeeId: targetId });
 
       const { data, error } = await supabase
         .from("weight_entries")
@@ -116,6 +119,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         if (existingRow.status === "rejected") {
           return res.status(400).json({ error: "รายการที่ไม่ผ่านแล้วแก้ไขไม่ได้ กรุณาส่งรายการใหม่" });
+        }
+        if (existingRow.status === "expired") {
+          return res.status(400).json({ error: "รายการหมดอายุแล้ว กรุณาส่งรายการใหม่" });
         }
         if (!canApproveEntries(auth) && existingRow.status !== "pending") {
           return res.status(400).json({ error: "แก้ไขได้เฉพาะรายการที่รออนุมัติ" });

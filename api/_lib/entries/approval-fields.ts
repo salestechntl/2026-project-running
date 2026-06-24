@@ -11,6 +11,7 @@ export function approvalFieldsForStatus(
       status: "approved",
       reject_note: null,
       rejected_by: null,
+      expired_at: null,
       approved_by: actorId,
       approved_at: nowIso,
     };
@@ -22,6 +23,7 @@ export function approvalFieldsForStatus(
       rejected_by: actorId,
       approved_by: null,
       approved_at: null,
+      expired_at: null,
     };
   }
   return {
@@ -30,5 +32,6 @@ export function approvalFieldsForStatus(
     rejected_by: null,
     approved_by: null,
     approved_at: null,
+    expired_at: null,
   };
 }

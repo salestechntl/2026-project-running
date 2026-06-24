@@ -51,10 +51,15 @@ export function isOrgAdmin(emp: Pick<Employee, "role">): boolean {
   return emp.role === "admin";
 }
 
-/** ลูกทีมทั้งสายงาน หรือทั้งองค์กรสำหรับ role admin */
+/** Admin / Super Admin — เห็นและจัดการข้อมูลทีมทั้งองค์กร */
+export function hasOrgWideTeamAccess(emp: Pick<Employee, "role">): boolean {
+  return emp.role === "admin" || emp.role === "super_admin";
+}
+
+/** ลูกทีมทั้งสายงาน หรือทั้งองค์กรสำหรับ admin / super_admin */
 export function teamRoster(actorId: string): Employee[] {
   const emp = findEmployee(actorId);
-  if (emp && isOrgAdmin(emp)) {
+  if (emp && hasOrgWideTeamAccess(emp)) {
     return EMPLOYEES.filter((e) => e.id !== actorId).sort((a, b) => a.name.localeCompare(b.name, "th"));
   }
   return subordinates(actorId);

@@ -3,7 +3,7 @@ import { flushSync } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import {
   Footprints, Scale, CheckCircle2, Route, Calendar, Lock, Pencil,
-  Trash2, AlertTriangle, Target,
+  Trash2, AlertTriangle, Target, Clock,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import {
@@ -43,7 +43,7 @@ function runDateFieldHint(min: string, max: string): string {
 
 /** เจ้าตัวแก้รายการนี้ได้ไหม */
 function canOwnerEditRun(status: EntryStatus, canSelfManage: boolean) {
-  if (status === "rejected") return false;
+  if (status === "rejected" || status === "expired") return false;
   if (status === "pending") return true;
   return canSelfManage;
 }
@@ -58,6 +58,9 @@ function entryStatusBadge(status: EntryStatus) {
   }
   if (status === "approved") {
     return <Badge tone="success"><CheckCircle2 className="h-3 w-3" /> {ENTRY_STATUS_LABEL.approved}</Badge>;
+  }
+  if (status === "expired") {
+    return <Badge tone="neutral"><Clock className="h-3 w-3" /> {ENTRY_STATUS_LABEL.expired}</Badge>;
   }
   return <Badge tone="danger"><AlertTriangle className="h-3 w-3" /> {ENTRY_STATUS_LABEL.rejected}</Badge>;
 }
@@ -559,7 +562,9 @@ const RunHistory = forwardRef(function RunHistory(
                       title={
                         r.status === "rejected"
                           ? "รายการไม่ผ่าน — ส่งรายการใหม่แทนการแก้ไข"
-                          : "อนุมัติแล้ว — แก้ไขไม่ได้"
+                          : r.status === "expired"
+                            ? "รายการหมดอายุ — ส่งรายการใหม่แทนการแก้ไข"
+                            : "อนุมัติแล้ว — แก้ไขไม่ได้"
                       }
                     >
                       <Lock className="h-3.5 w-3.5" /> ล็อก
@@ -570,6 +575,11 @@ const RunHistory = forwardRef(function RunHistory(
               {r.status === "rejected" && r.rejectNote && (
                 <p className={cn("mt-2", rejectedNoteClass)}>
                   เหตุผลจากหัวหน้า: {r.rejectNote}
+                </p>
+              )}
+              {r.status === "expired" && (
+                <p className="mt-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+                  รายการหมดอายุ (เกิน 5 วันรออนุมัติ) — กรุณาส่งรายการใหม่
                 </p>
               )}
             </div>
@@ -814,6 +824,11 @@ const WeightHistory = forwardRef(function WeightHistory(
             {w.status === "rejected" && w.rejectNote && (
               <p className={cn("mt-2", rejectedNoteClass)}>
                 เหตุผลจากหัวหน้า: {w.rejectNote}
+              </p>
+            )}
+            {w.status === "expired" && (
+              <p className="mt-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+                รายการหมดอายุ (เกิน 5 วันรออนุมัติ) — กรุณาส่งรายการใหม่
               </p>
             )}
           </div>

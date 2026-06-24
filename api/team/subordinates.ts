@@ -4,7 +4,7 @@ import { createAdminClient, isSupabaseConfigured } from "../_lib/supabase/admin.
 import {
   allEmployeesExcept,
   fetchActiveEmployees,
-  isOrgAdmin,
+  hasOrgWideTeamAccess,
   subordinatesFromRows,
 } from "../_lib/team/access.js";
 
@@ -23,7 +23,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const supabase = createAdminClient();
     const rows = await fetchActiveEmployees(supabase);
-    const team = isOrgAdmin(auth.role)
+    const team = hasOrgWideTeamAccess(auth.role)
       ? allEmployeesExcept(auth.sub, rows)
       : subordinatesFromRows(auth.sub, rows);
     return res.status(200).json({ team });

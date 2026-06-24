@@ -28,14 +28,42 @@ async function parseError(res: Response): Promise<string> {
   }
 }
 
-export async function apiLogin(employeeId: string): Promise<LoginResponse> {
+export class ApiError extends Error {
+  code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+  }
+}
+
+async function parseApiError(res: Response): Promise<ApiError> {
+  try {
+    const data = (await res.json()) as { error?: string; code?: string };
+    return new ApiError(data.error ?? `Request failed (${res.status})`, data.code);
+  } catch {
+    return new ApiError(`Request failed (${res.status})`);
+  }
+}
+
+export async function apiLogin(employeeId: string, password: string): Promise<LoginResponse> {
   const res = await fetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ employee_id: employeeId }),
+    body: JSON.stringify({ employee_id: employeeId, password }),
+  });
+  if (!res.ok) throw await parseApiError(res);
+  return res.json() as Promise<LoginResponse>;
+}
+
+export async function apiSetPassword(employeeId: string, password: string): Promise<void> {
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "set_password", employee_id: employeeId, password }),
   });
   if (!res.ok) throw new Error(await parseError(res));
-  return res.json() as Promise<LoginResponse>;
 }
 
 export async function apiMe(): Promise<MeResponse> {
@@ -279,7 +307,7 @@ export async function apiFetchEmployees(): Promise<EmployeeRecord[]> {
 }
 
 export async function apiCreateEmployee(
-  employee: Omit<EmployeeRecord, "createdAt" | "updatedAt">,
+  employee: Omit<EmployeeRecord, "createdAt" | "updatedAt" | "hasPassword">,
 ): Promise<EmployeeRecord> {
   const res = await fetch("/api/employees", {
     method: "POST",
@@ -293,7 +321,7 @@ export async function apiCreateEmployee(
 
 export async function apiUpdateEmployee(
   employeeId: string,
-  patch: Omit<EmployeeRecord, "employeeId" | "createdAt" | "updatedAt">,
+  patch: Omit<EmployeeRecord, "employeeId" | "createdAt" | "updatedAt" | "hasPassword">,
 ): Promise<EmployeeRecord> {
   const res = await fetch("/api/employees", {
     method: "PATCH",
@@ -311,4 +339,15 @@ export async function apiDeleteEmployee(employeeId: string): Promise<void> {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error(await parseError(res));
+}
+
+export async function apiResetEmployeePassword(employeeId: string, password: string): Promise<EmployeeRecord> {
+  const res = await fetch("/api/employees", {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify({ employeeId, resetPassword: password }),
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  const data = (await res.json()) as { employee: EmployeeRecord };
+  return data.employee;
 }

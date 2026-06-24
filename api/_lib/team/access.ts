@@ -28,8 +28,13 @@ export function isSuperAdminRole(role: DbRole): boolean {
   return role === "super_admin";
 }
 
+/** Admin / Super Admin — เห็นและจัดการข้อมูลทีมทั้งองค์กร */
+export function hasOrgWideTeamAccess(role: DbRole): boolean {
+  return isOrgAdmin(role) || isSuperAdminRole(role);
+}
+
 export function canApproveEntries(actor: Pick<JwtPayload, "isLead" | "role">): boolean {
-  return actor.isLead || isOrgAdmin(actor.role);
+  return actor.isLead || hasOrgWideTeamAccess(actor.role);
 }
 
 /** หัวหน้าทีม + Admin — ไม่ผ่านรายการรออนุมัติ */
@@ -37,14 +42,14 @@ export function canRejectPending(actor: Pick<JwtPayload, "isLead" | "role">): bo
   return canApproveEntries(actor);
 }
 
-/** Admin เท่านั้น — ไม่ผ่านรายการที่อนุมัติแล้ว */
+/** Admin / Super Admin — ไม่ผ่านรายการที่อนุมัติแล้ว */
 export function canRejectApproved(actor: Pick<JwtPayload, "role">): boolean {
-  return isOrgAdmin(actor.role) || isSuperAdminRole(actor.role);
+  return hasOrgWideTeamAccess(actor.role);
 }
 
 /** Admin / Super Admin — แก้ไขรายการที่ไม่ผ่านในหน้าทีม */
 export function canEditRejectedEntry(actor: Pick<JwtPayload, "role">): boolean {
-  return isOrgAdmin(actor.role) || isSuperAdminRole(actor.role);
+  return hasOrgWideTeamAccess(actor.role);
 }
 
 export function canSelfApprove(actor: Pick<JwtPayload, "isLead" | "role">, employeeId: string, actorId: string): boolean {
@@ -86,7 +91,7 @@ export function subordinatesFromRows(managerId: string, rows: DbEmployeeRow[]): 
   return out;
 }
 
-/** พนักงาน active ทั้งองค์กร (ยกเว้นตัวเอง) — สำหรับ role admin */
+/** พนักงาน active ทั้งองค์กร (ยกเว้นตัวเอง) — สำหรับ admin / super_admin */
 export function allEmployeesExcept(actorId: string, rows: DbEmployeeRow[]): TeamEmployee[] {
   return rows
     .filter((row) => row.employee_id !== actorId)
@@ -106,7 +111,7 @@ export async function canAccessEmployee(
   actor: Pick<JwtPayload, "isLead" | "role">,
 ): Promise<boolean> {
   if (actorId === targetId) return true;
-  if (isOrgAdmin(actor.role)) return true;
+  if (hasOrgWideTeamAccess(actor.role)) return true;
   if (!actor.isLead) return false;
   const subs = await getSubordinateIds(supabase, actorId);
   return subs.has(targetId);

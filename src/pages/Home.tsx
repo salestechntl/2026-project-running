@@ -9,8 +9,9 @@ import { Stat, LoadingBlock, Card } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 export default function Home() {
-  const { user, isLead, isAdmin } = useAuth();
-  const manageTeam = isLead || isAdmin;
+  const { user, isLead, isAdmin, isSuperAdmin } = useAuth();
+  const orgWideTeam = isAdmin || isSuperAdmin;
+  const manageTeam = isLead || orgWideTeam;
   const { runs, loading: runsLoading } = useRuns(user?.id);
   const weighMonth = currentMonthKey();
   const { weights: weighs, loading: weightsLoading } = useWeights(user?.id, weighMonth);
@@ -48,8 +49,10 @@ export default function Home() {
           {
             to: "/app/admin",
             icon: Users,
-            title: isAdmin ? "ข้อมูลทีมทั้งองค์กร" : "ข้อมูลทีมของฉัน",
-            desc: `ตรวจสอบรายการที่ลูกทีม ${teamLoading ? "…" : team.length} คนบันทึกเข้ามา`,
+            title: orgWideTeam ? "ข้อมูลทีมทั้งองค์กร" : "ข้อมูลทีมของฉัน",
+            desc: orgWideTeam
+              ? `ตรวจสอบรายการที่พนักงาน ${teamLoading ? "…" : team.length} คนบันทึกเข้ามา`
+              : `ตรวจสอบรายการที่ลูกทีม ${teamLoading ? "…" : team.length} คนบันทึกเข้ามา`,
             cta: "ดูข้อมูลทีม",
           },
         ]

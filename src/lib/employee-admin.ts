@@ -8,11 +8,12 @@ export interface EmployeeRecord {
   managerId: string | null;
   role: DbRole;
   isActive: boolean;
+  hasPassword: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-export type EmployeeFormState = Omit<EmployeeRecord, "createdAt" | "updatedAt">;
+export type EmployeeFormState = Omit<EmployeeRecord, "createdAt" | "updatedAt" | "hasPassword">;
 
 export interface EmployeeFieldError {
   field: keyof EmployeeFormState;

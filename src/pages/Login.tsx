@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Footprints, ArrowRight, IdCard } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Footprints, ArrowRight, IdCard, Lock } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { APP_VERSION } from "@/lib/version";
 import { Button, Field, Input } from "@/components/ui";
@@ -9,6 +9,7 @@ export default function Login() {
   const { login, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [id, setId] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
 
@@ -20,10 +21,17 @@ export default function Login() {
     e.preventDefault();
     setError(undefined);
     setLoading(true);
-    const res = await login(id);
+    const res = await login(id, password);
     setLoading(false);
-    if (res.ok) navigate("/app");
-    else setError(res.error);
+    if (res.ok) {
+      navigate("/app");
+      return;
+    }
+    if (res.needsPassword) {
+      navigate(`/set-password?employee_id=${encodeURIComponent(id.trim())}`, { replace: true });
+      return;
+    }
+    setError(res.error);
   }
 
   return (
@@ -83,18 +91,18 @@ export default function Login() {
 
           <h2 className="font-display text-2xl font-bold tracking-tight text-foreground">เข้าสู่ระบบ</h2>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            ใช้รหัสพนักงานของคุณเพื่อเริ่มบันทึกกิจกรรม
+            ใช้รหัสพนักงานและรหัสผ่านของคุณเพื่อเริ่มบันทึกกิจกรรม
           </p>
 
           <form onSubmit={submit} className="mt-7 space-y-5" noValidate>
-            <Field label="รหัสพนักงาน" required htmlFor="emp" error={error}>
+            <Field label="รหัสพนักงาน" required htmlFor="emp">
               <div className="relative">
                 <IdCard className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="emp"
                   inputMode="numeric"
                   autoFocus
-                  autoComplete="off"
+                  autoComplete="username"
                   placeholder="เช่น 80001234"
                   className="pl-11 tnum"
                   value={id}
@@ -107,10 +115,38 @@ export default function Login() {
               </div>
             </Field>
 
+            <Field label="รหัสผ่าน" required htmlFor="password">
+              <div className="relative">
+                <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  placeholder="รหัสผ่าน 4–30 ตัวอักษร"
+                  className="pl-11"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (error) setError(undefined);
+                  }}
+                  aria-invalid={!!error}
+                />
+              </div>
+            </Field>
+
+            {error && <p className="text-sm text-danger">{error}</p>}
+
             <Button type="submit" size="lg" className="w-full" disabled={loading}>
               {loading ? "กำลังตรวจสอบ…" : "เข้าสู่ระบบ"}
               {!loading && <ArrowRight className="h-4 w-4" />}
             </Button>
+
+            <p className="text-center text-sm text-muted-foreground">
+              เข้าใช้งานครั้งแรก?{" "}
+              <Link to="/set-password" className="font-medium text-primary hover:underline">
+                สร้างรหัสผ่าน
+              </Link>
+            </p>
           </form>
         </div>
       </div>

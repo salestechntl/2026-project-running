@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Trash2, UserCog, RefreshCw } from "lucide-react";
+import { Plus, Pencil, Trash2, UserCog, RefreshCw, KeyRound } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { apiCreateEmployee, apiDeleteEmployee, apiFetchEmployees, apiUpdateEmployee } from "@/lib/api";
+import {
+  apiCreateEmployee,
+  apiDeleteEmployee,
+  apiFetchEmployees,
+  apiResetEmployeePassword,
+  apiUpdateEmployee,
+} from "@/lib/api";
 import {
   emptyEmployeeForm,
   errorsByField,
@@ -11,6 +17,7 @@ import {
 } from "@/lib/employee-admin";
 import { Badge, Button, Card, ConfirmDialog, Field, Input, Select, LoadingBlock } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { passwordsMatch, validatePassword } from "@/lib/password";
 
 const ROLE_LABEL = { employee: "พนักงาน", admin: "Admin", super_admin: "Super Admin" } as const;
 
@@ -70,6 +77,12 @@ export default function EmployeeAdmin() {
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
+
+  const [resetId, setResetId] = useState<string | null>(null);
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [resetError, setResetError] = useState<string>();
+  const [resetSaving, setResetSaving] = useState(false);
 
   const ctx = useMemo(() => {
     const existingIds = new Set(employees.map((e) => e.employeeId));
@@ -212,6 +225,47 @@ export default function EmployeeAdmin() {
     }
   }
 
+  function openResetPassword(employeeId: string) {
+    setResetId(employeeId);
+    setResetPassword("");
+    setResetConfirm("");
+    setResetError(undefined);
+  }
+
+  function closeResetPassword() {
+    setResetId(null);
+    setResetPassword("");
+    setResetConfirm("");
+    setResetError(undefined);
+  }
+
+  async function confirmResetPassword() {
+    if (!resetId) return;
+    const passwordError = validatePassword(resetPassword);
+    if (passwordError) {
+      setResetError(passwordError);
+      return;
+    }
+    const matchError = passwordsMatch(resetPassword, resetConfirm);
+    if (matchError) {
+      setResetError(matchError);
+      return;
+    }
+
+    setResetSaving(true);
+    setResetError(undefined);
+    try {
+      const updated = await apiResetEmployeePassword(resetId, resetPassword);
+      setEmployees((rows) => rows.map((r) => (r.employeeId === updated.employeeId ? updated : r)));
+      flash(`รีเซ็ตรหัสผ่านของ ${resetId} เรียบร้อยแล้ว`);
+      closeResetPassword();
+    } catch (e) {
+      setResetError(e instanceof Error ? e.message : "รีเซ็ตรหัสผ่านไม่สำเร็จ");
+    } finally {
+      setResetSaving(false);
+    }
+  }
+
   if (authMode !== "api") {
     return (
       <div className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-[hsl(32_80%_34%)]">
@@ -305,7 +359,7 @@ export default function EmployeeAdmin() {
           <LoadingBlock label="กำลังโหลดรายชื่อพนักงาน…" />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[960px] text-left text-sm">
+            <table className="w-full min-w-[1080px] text-left text-sm">
               <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2.5">รหัส</th>
@@ -315,13 +369,14 @@ export default function EmployeeAdmin() {
                   <th className="px-3 py-2.5">หัวหน้า</th>
                   <th className="px-3 py-2.5">บทบาท</th>
                   <th className="px-3 py-2.5">สถานะ</th>
+                  <th className="px-3 py-2.5">รหัสผ่าน</th>
                   <th className="px-3 py-2.5 text-right">จัดการ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-3 py-10 text-center text-muted-foreground">
+                    <td colSpan={9} className="px-3 py-10 text-center text-muted-foreground">
                       ไม่พบข้อมูลตามตัวกรอง
                     </td>
                   </tr>
@@ -401,6 +456,11 @@ export default function EmployeeAdmin() {
                           )}
                         </td>
                         <td className="px-3 py-2">
+                          <Badge tone={row.hasPassword ? "success" : "neutral"}>
+                            {row.hasPassword ? "ตั้งแล้ว" : "ยังไม่ตั้ง"}
+                          </Badge>
+                        </td>
+                        <td className="px-3 py-2">
                           <div className="flex justify-end gap-1">
                             {editing ? (
                               <>
@@ -413,6 +473,15 @@ export default function EmployeeAdmin() {
                               </>
                             ) : (
                               <>
+                                <button
+                                  type="button"
+                                  onClick={() => openResetPassword(row.employeeId)}
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                                  aria-label="รีเซ็ตรหัสผ่าน"
+                                  title="รีเซ็ตรหัสผ่าน"
+                                >
+                                  <KeyRound className="h-4 w-4" />
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => startEdit(row)}
@@ -480,6 +549,51 @@ export default function EmployeeAdmin() {
         onConfirm={() => void confirmDelete()}
         onCancel={() => setDeleteId(null)}
       />
+
+      {resetId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <Card className="w-full max-w-md space-y-4 p-5 shadow-xl">
+            <div>
+              <h2 className="font-display text-lg font-bold text-foreground">รีเซ็ตรหัสผ่าน</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                ตั้งรหัสผ่านใหม่ให้รหัสพนักงาน <span className="tnum font-medium text-foreground">{resetId}</span>
+              </p>
+            </div>
+            <Field label="รหัสผ่านใหม่" required htmlFor="reset-pw" hint="4–30 ตัวอักษร" error={resetError}>
+              <Input
+                id="reset-pw"
+                type="password"
+                autoComplete="new-password"
+                value={resetPassword}
+                onChange={(e) => {
+                  setResetPassword(e.target.value);
+                  if (resetError) setResetError(undefined);
+                }}
+              />
+            </Field>
+            <Field label="ยืนยันรหัสผ่านใหม่" required htmlFor="reset-confirm">
+              <Input
+                id="reset-confirm"
+                type="password"
+                autoComplete="new-password"
+                value={resetConfirm}
+                onChange={(e) => {
+                  setResetConfirm(e.target.value);
+                  if (resetError) setResetError(undefined);
+                }}
+              />
+            </Field>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={closeResetPassword} disabled={resetSaving}>
+                ยกเลิก
+              </Button>
+              <Button onClick={() => void confirmResetPassword()} disabled={resetSaving}>
+                {resetSaving ? "กำลังบันทึก…" : "บันทึกรหัสผ่านใหม่"}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

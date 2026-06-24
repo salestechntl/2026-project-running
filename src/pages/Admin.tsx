@@ -25,26 +25,33 @@ interface MemberWorkStatus {
   pending: boolean;
   approved: boolean;
   rejected: boolean;
+  expired: boolean;
 }
 
 interface StatusTotals {
   pending: number;
   approved: number;
   rejected: number;
+  expired: number;
 }
 
-const EMPTY_STATUS_TOTALS: StatusTotals = { pending: 0, approved: 0, rejected: 0 };
+const EMPTY_STATUS_TOTALS: StatusTotals = { pending: 0, approved: 0, rejected: 0, expired: 0 };
 
 function memberHasWorkStatus(flags: MemberWorkStatus | undefined, filter: WorkStatusFilter): boolean {
   if (filter === "all") return true;
   return flags?.[filter] ?? false;
 }
 
+function apiErrorMessage(e: unknown, fallback = "บันทึกไม่สำเร็จ กรุณาลองใหม่"): string {
+  return e instanceof Error && e.message ? e.message : fallback;
+}
+
 export default function Admin() {
   const { user, isLead, isAdmin, isSuperAdmin } = useAuth();
-  const canRejectPending = isLead || isAdmin;
-  const canRejectApproved = isAdmin || isSuperAdmin;
-  const canEditRejected = isAdmin || isSuperAdmin;
+  const orgWideTeam = isAdmin || isSuperAdmin;
+  const canRejectPending = isLead || orgWideTeam;
+  const canRejectApproved = orgWideTeam;
+  const canEditRejected = orgWideTeam;
   const { team, loading: teamLoading } = useSubordinates(user?.id);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [gallery, setGallery] = useState<{ images: string[]; index: number } | null>(null);
@@ -54,19 +61,28 @@ export default function Admin() {
   const [statusTotals, setStatusTotals] = useState<StatusTotals>(EMPTY_STATUS_TOTALS);
   const [countsLoading, setCountsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<WorkStatusFilter>("all");
   const openGallery = (images: string[]) => images.length > 0 && setGallery({ images, index: 0 });
+
+  const departmentOptions = useMemo(() => {
+    const depts = [...new Set(team.map((m) => m.department).filter(Boolean))];
+    return depts.sort((a, b) => a.localeCompare(b, "th"));
+  }, [team]);
 
   const filteredTeam = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return team.filter((member) => {
+      if (departmentFilter !== "all" && member.department !== departmentFilter) {
+        return false;
+      }
       if (q && !member.id.toLowerCase().includes(q) && !member.name.toLowerCase().includes(q)) {
         return false;
       }
       if (countsLoading || statusFilter === "all") return true;
       return memberHasWorkStatus(workStatusByMember[member.id], statusFilter);
     });
-  }, [team, searchQuery, statusFilter, workStatusByMember, countsLoading]);
+  }, [team, searchQuery, departmentFilter, statusFilter, workStatusByMember, countsLoading]);
 
   useEffect(() => {
     if (filteredTeam.length === 0) {
@@ -121,6 +137,7 @@ export default function Admin() {
         pending: entries.some((e) => e.status === "pending"),
         approved: entries.some((e) => e.status === "approved"),
         rejected: entries.some((e) => e.status === "rejected"),
+        expired: entries.some((e) => e.status === "expired"),
       },
     }));
   }, []);
@@ -230,9 +247,16 @@ export default function Admin() {
     [patchWeight, bumpPending, shiftStatusTotals, refreshMemberWorkStatus],
   );
 
+  function canApproveForStatus(status: EntryStatus): boolean {
+    if (status === "pending") return isLead || orgWideTeam;
+    if (status === "expired") return orgWideTeam;
+    return false;
+  }
+
   function canRejectForStatus(status: EntryStatus): boolean {
     if (status === "pending") return canRejectPending;
     if (status === "approved") return canRejectApproved;
+    if (status === "expired") return orgWideTeam;
     return false;
   }
 
@@ -249,7 +273,7 @@ export default function Admin() {
       const counts: Record<string, number> = {};
       const pending: Record<string, number> = {};
       const workStatus: Record<string, MemberWorkStatus> = {};
-      const totals: StatusTotals = { pending: 0, approved: 0, rejected: 0 };
+      const totals: StatusTotals = { pending: 0, approved: 0, rejected: 0, expired: 0 };
       await Promise.all(
         team.map(async (member) => {
           const [memberRuns, memberWeights] = await Promise.all([
@@ -265,6 +289,7 @@ export default function Admin() {
             pending: entries.some((e) => e.status === "pending"),
             approved: entries.some((e) => e.status === "approved"),
             rejected: entries.some((e) => e.status === "rejected"),
+            expired: entries.some((e) => e.status === "expired"),
           };
           for (const entry of entries) {
             totals[entry.status] += 1;
@@ -291,9 +316,13 @@ export default function Admin() {
   return (
     <div className="space-y-6">
       <header className="animate-fade-up">
-        <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">ข้อมูลทีมของฉัน</h1>
+        <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
+          {orgWideTeam ? "ข้อมูลทีมทั้งองค์กร" : "ข้อมูลทีมของฉัน"}
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          ตรวจสอบรายการที่ลูกทีมบันทึก — อนุมัติหรือปฏิเสธพร้อมระบุเหตุผล
+          {orgWideTeam
+            ? "ตรวจสอบรายการที่พนักงานบันทึก — อนุมัติหรือปฏิเสธพร้อมระบุเหตุผล"
+            : "ตรวจสอบรายการที่ลูกทีมบันทึก — อนุมัติหรือปฏิเสธพร้อมระบุเหตุผล"}
         </p>
       </header>
 
@@ -312,6 +341,21 @@ export default function Admin() {
             </div>
           </Field>
 
+          <Field label="แผนก" htmlFor="team-department" className="w-full shrink-0 sm:w-44">
+            <Select
+              id="team-department"
+              value={departmentFilter}
+              onChange={(e) => setDepartmentFilter(e.target.value)}
+            >
+              <option value="all">ทั้งหมด</option>
+              {departmentOptions.map((dept) => (
+                <option key={dept} value={dept}>
+                  {dept}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
           <Field label="สถานะ" htmlFor="team-status" className="w-full shrink-0 sm:w-44">
             <Select
               id="team-status"
@@ -322,6 +366,7 @@ export default function Admin() {
               <option value="pending">{ENTRY_STATUS_LABEL.pending}</option>
               <option value="approved">{ENTRY_STATUS_LABEL.approved}</option>
               <option value="rejected">{ENTRY_STATUS_LABEL.rejected}</option>
+              <option value="expired">{ENTRY_STATUS_LABEL.expired}</option>
             </Select>
           </Field>
 
@@ -413,6 +458,7 @@ export default function Admin() {
                       <RunRow
                         key={r.id}
                         run={r}
+                        canApprove={canApproveForStatus(r.status)}
                         canReject={canRejectForStatus(r.status)}
                         canEdit={canEditRejected && r.status === "rejected"}
                         onPreview={openGallery}
@@ -438,6 +484,7 @@ export default function Admin() {
                       <WeightRow
                         key={w.id}
                         weight={w}
+                        canApprove={canApproveForStatus(w.status)}
                         canReject={canRejectForStatus(w.status)}
                         canEdit={canEditRejected && w.status === "rejected"}
                         onPreview={openGallery}
@@ -554,6 +601,7 @@ function Gallery({
 function StatusControls({
   status,
   busy,
+  canApprove,
   canReject,
   canEdit,
   onApprove,
@@ -562,6 +610,7 @@ function StatusControls({
 }: {
   status: EntryStatus;
   busy?: boolean;
+  canApprove: boolean;
   canReject: boolean;
   canEdit?: boolean;
   onApprove: () => void;
@@ -572,12 +621,31 @@ function StatusControls({
     return (
       <div className="flex flex-wrap items-center justify-end gap-1.5">
         <Badge tone="warning"><Clock className="h-3 w-3" /> {ENTRY_STATUS_LABEL.pending}</Badge>
-        <Button size="sm" onClick={onApprove} disabled={busy} className="h-8 px-2.5 text-xs">
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "อนุมัติ"}
-        </Button>
+        {canApprove && (
+          <Button size="sm" onClick={onApprove} disabled={busy} className="h-8 px-2.5 text-xs">
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "อนุมัติ"}
+          </Button>
+        )}
         {canReject && (
           <Button size="sm" variant="outline" onClick={onReject} disabled={busy} className="h-8 px-2.5 text-xs">
             ไม่ผ่าน
+          </Button>
+        )}
+      </div>
+    );
+  }
+  if (status === "expired") {
+    return (
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
+        <Badge tone="neutral"><Clock className="h-3 w-3" /> {ENTRY_STATUS_LABEL.expired}</Badge>
+        {canApprove && (
+          <Button size="sm" onClick={onApprove} disabled={busy} className="h-8 px-2.5 text-xs">
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "อนุมัติ"}
+          </Button>
+        )}
+        {canReject && (
+          <Button size="sm" variant="outline" onClick={onReject} disabled={busy} className="h-8 px-2.5 text-xs">
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "ไม่ผ่าน"}
           </Button>
         )}
       </div>
@@ -620,6 +688,7 @@ function askRejectReason(): string | null {
 
 function RunRow({
   run,
+  canApprove,
   canReject,
   canEdit,
   onPreview,
@@ -627,6 +696,7 @@ function RunRow({
   onStaffEdit,
 }: {
   run: RunEntry;
+  canApprove: boolean;
   canReject: boolean;
   canEdit: boolean;
   onPreview: (images: string[]) => void;
@@ -675,8 +745,8 @@ function RunRow({
     setBusy(true);
     try {
       await action();
-    } catch {
-      window.alert("บันทึกไม่สำเร็จ กรุณาลองใหม่");
+    } catch (e) {
+      window.alert(apiErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -797,6 +867,7 @@ function RunRow({
         <StatusControls
           status={run.status}
           busy={busy}
+          canApprove={canApprove}
           canReject={canReject}
           canEdit={canEdit}
           onApprove={() => void act(() => onStatusChange(run, "approved"))}
@@ -817,6 +888,7 @@ function RunRow({
 
 function WeightRow({
   weight,
+  canApprove,
   canReject,
   canEdit,
   onPreview,
@@ -824,6 +896,7 @@ function WeightRow({
   onStaffEdit,
 }: {
   weight: WeightEntry;
+  canApprove: boolean;
   canReject: boolean;
   canEdit: boolean;
   onPreview: (images: string[]) => void;
@@ -850,8 +923,8 @@ function WeightRow({
     setBusy(true);
     try {
       await action();
-    } catch {
-      window.alert("บันทึกไม่สำเร็จ กรุณาลองใหม่");
+    } catch (e) {
+      window.alert(apiErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -937,6 +1010,7 @@ function WeightRow({
         <StatusControls
           status={weight.status}
           busy={busy}
+          canApprove={canApprove}
           canReject={canReject}
           canEdit={canEdit}
           onApprove={() => void act(() => onStatusChange(weight, "approved"))}
@@ -1007,10 +1081,11 @@ function EmptyState({ text }: { text: string }) {
 }
 
 function StatusTotalsSummary({ totals, loading }: { totals: StatusTotals; loading: boolean }) {
-  const items: { status: EntryStatus; tone: "warning" | "success" | "danger"; icon: typeof Clock }[] = [
+  const items: { status: EntryStatus; tone: "warning" | "success" | "danger" | "neutral"; icon: typeof Clock }[] = [
     { status: "pending", tone: "warning", icon: Clock },
     { status: "approved", tone: "success", icon: CheckCircle2 },
     { status: "rejected", tone: "danger", icon: AlertTriangle },
+    { status: "expired", tone: "neutral", icon: Clock },
   ];
 
   return (
@@ -1027,6 +1102,7 @@ function StatusTotalsSummary({ totals, loading }: { totals: StatusTotals; loadin
               tone === "warning" && "text-warning",
               tone === "success" && "text-success",
               tone === "danger" && "text-danger",
+              tone === "neutral" && "text-muted-foreground",
             )} />
             <div className="min-w-0">
               <p className="text-[11px] leading-tight text-muted-foreground">{ENTRY_STATUS_LABEL[status]}</p>

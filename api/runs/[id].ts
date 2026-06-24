@@ -1,10 +1,11 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAuth } from "../_lib/auth/require.js";
 import { createAdminClient, isSupabaseConfigured } from "../_lib/supabase/admin.js";
-import { canAccessEmployee, canApproveEntries, canEditRejectedEntry, canRejectApproved, canRejectPending } from "../_lib/team/access.js";
+import { canAccessEmployee, canApproveEntries, canEditRejectedEntry } from "../_lib/team/access.js";
 import { mapRun, validateImageSlots, type DbRunRow } from "../_lib/entries/map.js";
 import { approvalFieldsForStatus } from "../_lib/entries/approval-fields.js";
-import { canLeadApprove, canLeadReject } from "../_lib/entries/status.js";
+import { canActorApprove, canActorReject } from "../_lib/entries/status.js";
+import { expireEntryIfStale } from "../_lib/entries/expire.js";
 import { attachRunImages } from "../_lib/entries/attach-run-images.js";
 import { isRunDateAllowed } from "../_lib/entries/run-date-bounds.js";
 import { loadAttachmentViews, snapshotEntry } from "../_lib/storage/attachments.js";
@@ -170,6 +171,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ run: mapRun(updated as DbRunRow, views.get(id)) });
       }
 
+      await expireEntryIfStale(supabase, "run_entries", "run", row);
+      const { data: freshRun } = await supabase.from("run_entries").select("*").eq("id", id).single();
+      const activeRow = (freshRun ?? row) as DbRunRow;
+
       if (!canApproveEntries(auth)) {
         return res.status(403).json({ error: "เฉพาะหัวหน้าทีมเท่านั้น" });
       }
@@ -180,7 +185,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (status === "approved") {
-        if (!canLeadApprove(row.status)) {
+        if (!canActorApprove(activeRow.status, auth)) {
+          if (activeRow.status === "expired") {
+            return res.status(403).json({ error: "เฉพาะ Admin / Super Admin เท่านั้นที่อนุมัติรายการหมดอายุได้" });
+          }
           return res.status(400).json({ error: "อนุมัติได้เฉพาะรายการที่รออนุมัติ" });
         }
 
@@ -191,6 +199,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             status: "approved",
             reject_note: null,
             rejected_by: null,
+            expired_at: null,
             approved_by: auth.sub,
             approved_at: nowIso,
           })
@@ -213,15 +222,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ run: mapRun(updated as DbRunRow) });
       }
 
-      if (!canLeadReject(row.status)) {
+      if (!canActorReject(activeRow.status, auth)) {
+        if (activeRow.status === "expired") {
+          return res.status(403).json({ error: "เฉพาะ Admin / Super Admin เท่านั้นที่ไม่อนุมัติรายการหมดอายุได้" });
+        }
         return res.status(400).json({ error: "ไม่สามารถปฏิเสธรายการนี้ได้" });
-      }
-
-      if (row.status === "approved" && !canRejectApproved(auth)) {
-        return res.status(403).json({ error: "เฉพาะ Admin เท่านั้นที่สามารถไม่อนุมัติรายการที่อนุมัติแล้วได้" });
-      }
-      if (row.status === "pending" && !canRejectPending(auth)) {
-        return res.status(403).json({ error: "ไม่มีสิทธิ์ไม่อนุมัติรายการนี้" });
       }
 
       const rejectNote = String(req.body?.rejectNote ?? "").trim();
@@ -237,6 +242,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           rejected_by: auth.sub,
           approved_by: null,
           approved_at: null,
+          expired_at: null,
         })
         .eq("id", id)
         .select("*")

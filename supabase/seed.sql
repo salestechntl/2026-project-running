@@ -34,5 +34,8 @@ on conflict (employee_id) do update set
   is_active = excluded.is_active;
 
 -- Super admin: set YOUR employee_id here (demo uses 10001)
--- update public.employees set role = 'super_admin' where employee_id = 'YOUR_EMPLOYEE_ID';
-update public.employees set role = 'super_admin' where employee_id = '10001';
+-- Default password for seed super_admin: P@ssw0rd
+update public.employees
+set role = 'super_admin',
+    password_hash = '$2b$10$IkZCX0EToT6Hq0sgz1oxfu3bwVS3MXoF1wA16h2wI5JZN/g0BDAb2'
+where employee_id = '10001';

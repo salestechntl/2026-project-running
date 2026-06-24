@@ -7,6 +7,7 @@ import { mapRunDbError } from "../_lib/entries/db-error.js";
 import { attachRunImages } from "../_lib/entries/attach-run-images.js";
 import { isRunDateAllowed } from "../_lib/entries/run-date-bounds.js";
 import { resolveSubmitStatus } from "../_lib/entries/status.js";
+import { expirePendingEntries } from "../_lib/entries/expire.js";
 import {
   loadAttachmentViews,
   migrateLegacyRunImages,
@@ -32,9 +33,6 @@ async function enrichRuns(
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const auth = requireAuth(req);
-  if (!auth) return res.status(401).json({ error: "กรุณาเข้าสู่ระบบ" });
-
   if (!isSupabaseConfigured()) {
     return res.status(503).json({ error: "Supabase is not configured on the server" });
   }
@@ -42,12 +40,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const supabase = createAdminClient();
 
+    /** Cron รายวัน — ใช้ endpoint เดิม ไม่เพิ่ม serverless function (Hobby จำกัด 12) */
+    const cronSecret = process.env.CRON_SECRET;
+    if (
+      req.method === "GET" &&
+      req.query.expire_all === "1" &&
+      cronSecret &&
+      req.headers.authorization === `Bearer ${cronSecret}`
+    ) {
+      const expired = await expirePendingEntries(supabase);
+      return res.status(200).json({ ok: true, expired });
+    }
+
+    const auth = requireAuth(req);
+    if (!auth) return res.status(401).json({ error: "กรุณาเข้าสู่ระบบ" });
+
     if (req.method === "GET") {
       const targetId = String(req.query.employee_id ?? auth.sub).trim();
       if (!targetId) return res.status(400).json({ error: "กรุณาระบุรหัสพนักงาน" });
 
       const allowed = await canAccessEmployee(supabase, auth.sub, targetId, auth);
       if (!allowed) return res.status(403).json({ error: "ไม่มีสิทธิ์ดูข้อมูลนี้" });
+
+      await expirePendingEntries(supabase, { employeeId: targetId });
 
       const { data, error } = await supabase
         .from("run_entries")
@@ -131,6 +146,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const row = existingRow!;
         if (row.status === "rejected") {
           return res.status(400).json({ error: "รายการที่ไม่ผ่านแล้วแก้ไขไม่ได้ กรุณาส่งรายการใหม่" });
+        }
+        if (row.status === "expired") {
+          return res.status(400).json({ error: "รายการหมดอายุแล้ว กรุณาส่งรายการใหม่" });
         }
         if (!canApproveEntries(auth) && row.status !== "pending") {
           return res.status(400).json({ error: "แก้ไขได้เฉพาะรายการที่รออนุมัติ" });

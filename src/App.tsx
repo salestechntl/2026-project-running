@@ -7,6 +7,7 @@ import { useSubordinates } from "@/lib/hooks/useTeam";
 import { useRejectedEntryCount } from "@/lib/hooks/useEntries";
 import { AppShell, type NavItem } from "@/components/AppShell";
 import Login from "@/pages/Login";
+import SetPassword from "@/pages/SetPassword";
 import Home from "@/pages/Home";
 import LogEntry from "@/pages/LogEntry";
 import Dashboard from "@/pages/Dashboard";
@@ -15,8 +16,8 @@ import SuperAdmin from "@/pages/SuperAdmin";
 import Export from "@/pages/Export";
 import EmployeeAdmin from "@/pages/EmployeeAdmin";
 
-function canManageTeam(isLead: boolean, isAdmin: boolean): boolean {
-  return isLead || isAdmin;
+function canManageTeam(isLead: boolean, isAdmin: boolean, isSuperAdmin: boolean): boolean {
+  return isLead || isAdmin || isSuperAdmin;
 }
 
 /** จำนวนรายการรออนุมัติของทีม สำหรับ badge บนเมนู "ข้อมูลทีม" */
@@ -62,7 +63,7 @@ function ProtectedLayout() {
   }
   if (!user) return <Navigate to="/" replace />;
 
-  const manageTeam = canManageTeam(isLead, isAdmin);
+  const manageTeam = canManageTeam(isLead, isAdmin, isSuperAdmin);
   const teamPending = usePendingTeamCount(user.id, manageTeam);
   const rejectedCount = useRejectedEntryCount(user.id);
 
@@ -102,8 +103,8 @@ function SuperAdminOnly({ children }: { children: React.ReactNode }) {
 }
 
 function TeamManagerOnly({ children }: { children: React.ReactNode }) {
-  const { isLead, isAdmin } = useAuth();
-  if (!canManageTeam(isLead, isAdmin)) return <Navigate to="/app" replace />;
+  const { isLead, isAdmin, isSuperAdmin } = useAuth();
+  if (!canManageTeam(isLead, isAdmin, isSuperAdmin)) return <Navigate to="/app" replace />;
   return <>{children}</>;
 }
 
@@ -112,6 +113,7 @@ export default function App() {
     <AuthProvider>
       <Routes>
         <Route path="/" element={<Login />} />
+        <Route path="/set-password" element={<SetPassword />} />
         <Route path="/app" element={<ProtectedLayout />}>
           <Route index element={<Home />} />
           <Route path="log" element={<LogEntry />} />
