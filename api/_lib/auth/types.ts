@@ -44,4 +44,16 @@ export interface MeResponse {
   isLead: boolean;
   isAdmin: boolean;
   isSuperAdmin: boolean;
+  home?: HomeStatsDto;
+}
+
+export interface HomeStatsDto {
+  monthKey: string;
+  totalKm: number;
+  monthKm: number;
+  approvedRunCount: number;
+  monthRunCount: number;
+  weightStartDone: boolean;
+  weightEndDone: boolean;
+  teamCount: number;
 }

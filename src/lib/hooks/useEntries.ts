@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { DATA_CHANGED_EVENT, fetchRuns, fetchWeights } from "../entries";
+import { DATA_CHANGED_EVENT, fetchHomeStats, fetchRuns, fetchWeights, type HomeStats } from "../entries";
 import type { RunEntry, WeightEntry } from "../store";
 import { holdLoading } from "./loading";
 
@@ -50,6 +50,47 @@ export function useRejectedEntryCount(employeeId: string | undefined): number {
   }, [employeeId]);
 
   return count;
+}
+
+export function useHomeStats(
+  employeeId: string | undefined,
+  manageTeam: boolean,
+  managerId: string | undefined,
+) {
+  const [stats, setStats] = useState<HomeStats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    if (!employeeId) {
+      setStats(null);
+      setLoading(false);
+      return;
+    }
+    const mgrId = managerId ?? employeeId;
+    setLoading(true);
+    const startedAt = Date.now();
+    try {
+      setStats(await fetchHomeStats(employeeId, { manageTeam, managerId: mgrId }));
+    } catch (e) {
+      console.error("useHomeStats:", e);
+      setStats(null);
+    } finally {
+      await holdLoading(startedAt);
+      setLoading(false);
+    }
+  }, [employeeId, manageTeam, managerId]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const onChange = () => void refresh();
+    window.addEventListener(DATA_CHANGED_EVENT, onChange);
+    return () => window.removeEventListener(DATA_CHANGED_EVENT, onChange);
+  }, [refresh]);
+
+  return { stats, loading, refresh };
 }
 
 export function useRuns(employeeId: string | undefined, options?: UseEntriesOptions) {

@@ -1,6 +1,12 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { bearerToken, verifyToken } from "../_lib/auth/jwt.js";
 import type { AuthUser, MeResponse } from "../_lib/auth/types.js";
+import { loadHomeStats } from "../_lib/home/stats.js";
+import { createAdminClient, isSupabaseConfigured } from "../_lib/supabase/admin.js";
+
+function canManageTeam(isLead: boolean, role: string): boolean {
+  return isLead || role === "admin" || role === "super_admin";
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {
@@ -23,12 +29,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       role: payload.role,
     };
 
+    const isAdmin = payload.role === "admin";
+    const isSuperAdmin = payload.role === "super_admin";
+    const manageTeam = canManageTeam(payload.isLead, payload.role);
+
     const body: MeResponse = {
       user,
       isLead: payload.isLead,
-      isAdmin: payload.role === "admin",
-      isSuperAdmin: payload.role === "super_admin",
+      isAdmin,
+      isSuperAdmin,
     };
+
+    const includeHome = req.query.include === "home" || req.query.home === "1";
+    if (includeHome) {
+      if (!isSupabaseConfigured()) {
+        return res.status(503).json({ error: "Supabase is not configured on the server" });
+      }
+      try {
+        const supabase = createAdminClient();
+        body.home = await loadHomeStats(supabase, payload.sub, payload.role, manageTeam);
+      } catch (err) {
+        console.error("home stats error:", err);
+        return res.status(500).json({ error: "ไม่สามารถโหลดสถิติหน้าแรกได้" });
+      }
+    }
 
     return res.status(200).json(body);
   } catch {

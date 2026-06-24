@@ -1,4 +1,4 @@
-import type { LoginResponse, MeResponse, OrgImportBatch, OrgImportResponse } from "./auth-types";
+import type { LoginResponse, MeResponse, HomeStats, OrgImportBatch, OrgImportResponse } from "./auth-types";
 import type { EmployeeRecord } from "./employee-admin";
 import type { RunEntry, WeightEntry, EntryStatus } from "./store";
 import type { Employee } from "./types";
@@ -70,6 +70,14 @@ export async function apiMe(): Promise<MeResponse> {
   const res = await fetch("/api/auth/me", { headers: authHeaders() });
   if (!res.ok) throw new Error(await parseError(res));
   return res.json() as Promise<MeResponse>;
+}
+
+export async function apiFetchHomeStats(): Promise<HomeStats> {
+  const res = await fetch("/api/auth/me?include=home", { headers: authHeaders() });
+  if (!res.ok) throw new Error(await parseError(res));
+  const data = (await res.json()) as MeResponse;
+  if (!data.home) throw new Error("ไม่สามารถโหลดสถิติหน้าแรกได้");
+  return data.home;
 }
 
 export async function apiOrgImport(

@@ -2,9 +2,8 @@ import { Link } from "react-router-dom";
 import { PenLine, BarChart3, Users, ArrowRight, Scale, TrendingUp, Target, CheckCircle2, Circle, Calendar, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
-import { currentMonthKey, missionForMonth, monthLabel, monthOf, END_WEIGHT_GRACE_DAYS } from "@/lib/missions";
-import { useRuns, useWeights } from "@/lib/hooks/useEntries";
-import { useSubordinates } from "@/lib/hooks/useTeam";
+import { currentMonthKey, missionForMonth, monthLabel, END_WEIGHT_GRACE_DAYS } from "@/lib/missions";
+import { useHomeStats } from "@/lib/hooks/useEntries";
 import { Stat, LoadingBlock, Card } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
@@ -12,21 +11,19 @@ export default function Home() {
   const { user, isLead, isAdmin, isSuperAdmin } = useAuth();
   const orgWideTeam = isAdmin || isSuperAdmin;
   const manageTeam = isLead || orgWideTeam;
-  const { runs, loading: runsLoading } = useRuns(user?.id);
-  const weighMonth = currentMonthKey();
-  const { weights: weighs, loading: weightsLoading } = useWeights(user?.id, weighMonth);
-  const { team, loading: teamLoading } = useSubordinates(manageTeam ? user?.id : undefined);
+  const { stats, loading: statsLoading } = useHomeStats(user?.id, manageTeam, user?.id);
 
   if (!user) return null;
 
-  const totalKm = runs.filter((r) => r.status === "approved").reduce((s, r) => s + r.distanceKm, 0);
-  const thisMonthRuns = runs.filter((r) => r.status === "approved" && monthOf(r.date) === currentMonthKey());
-  const monthKm = thisMonthRuns.reduce((s, r) => s + r.distanceKm, 0);
-  const approvedRunCount = runs.filter((r) => r.status === "approved").length;
-
-  const hasStart = weighs.some((w) => w.period === "start" && w.status === "approved");
-  const hasEnd = weighs.some((w) => w.period === "end" && w.status === "approved");
+  const weighMonth = stats?.monthKey ?? currentMonthKey();
+  const totalKm = stats?.totalKm ?? 0;
+  const monthKm = stats?.monthKm ?? 0;
+  const approvedRunCount = stats?.approvedRunCount ?? 0;
+  const monthRunCount = stats?.monthRunCount ?? 0;
+  const hasStart = stats?.weightStartDone ?? false;
+  const hasEnd = stats?.weightEndDone ?? false;
   const weightDone = hasStart && hasEnd;
+  const teamCount = stats?.teamCount ?? 0;
 
   const menu = [
     {
@@ -51,8 +48,8 @@ export default function Home() {
             icon: Users,
             title: orgWideTeam ? "ข้อมูลทีมทั้งองค์กร" : "ข้อมูลทีมของฉัน",
             desc: orgWideTeam
-              ? `ตรวจสอบรายการที่พนักงาน ${teamLoading ? "…" : team.length} คนบันทึกเข้ามา`
-              : `ตรวจสอบรายการที่ลูกทีม ${teamLoading ? "…" : team.length} คนบันทึกเข้ามา`,
+              ? `ตรวจสอบรายการที่พนักงาน ${statsLoading ? "…" : teamCount} คนบันทึกเข้ามา`
+              : `ตรวจสอบรายการที่ลูกทีม ${statsLoading ? "…" : teamCount} คนบันทึกเข้ามา`,
             cta: "ดูข้อมูลทีม",
           },
         ]
@@ -101,7 +98,7 @@ export default function Home() {
               <p className="text-sm font-semibold text-foreground">
                 น้ำหนักประจำเดือน · {monthLabel(weighMonth)}
               </p>
-              {weightsLoading ? (
+              {statsLoading ? (
                 <div className="mt-3">
                   <LoadingBlock compact label="กำลังโหลดข้อมูลน้ำหนัก…" />
                 </div>
@@ -140,7 +137,7 @@ export default function Home() {
 
       {/* Personal stats */}
       <section className="grid gap-4 sm:grid-cols-2">
-        {runsLoading ? (
+        {statsLoading ? (
           <Card className="sm:col-span-2">
             <LoadingBlock label="กำลังโหลดสถิติการวิ่ง…" />
           </Card>
@@ -150,9 +147,9 @@ export default function Home() {
           <Stat label="ระยะทางสะสม" value={totalKm.toFixed(1)} unit="กม." />
           <Stat label="จำนวนครั้งที่วิ่ง" value={String(approvedRunCount)} unit="ครั้ง" />
         </StatGroup>
-        <StatGroup title="เดือนนี้" caption={monthLabel(currentMonthKey())} icon={Target} tone="primary">
+        <StatGroup title="เดือนนี้" caption={monthLabel(weighMonth)} icon={Target} tone="primary">
           <Stat label="ระยะทางสะสม" value={monthKm.toFixed(1)} unit="กม." />
-          <Stat label="จำนวนครั้งที่วิ่ง" value={String(thisMonthRuns.length)} unit="ครั้ง" />
+          <Stat label="จำนวนครั้งที่วิ่ง" value={String(monthRunCount)} unit="ครั้ง" />
         </StatGroup>
           </>
         )}

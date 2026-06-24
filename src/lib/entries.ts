@@ -5,6 +5,7 @@
 import { getAuthMode } from "./auth-config";
 import {
   apiDeleteRun,
+  apiFetchHomeStats,
   apiFetchRuns,
   apiFetchSubordinates,
   apiFetchWeights,
@@ -34,8 +35,21 @@ import {
   type WeightEntry,
 } from "./store";
 import { teamRoster as localTeamRoster } from "./data";
+import { computeHomeStats, type HomeStats } from "./home-stats";
+import { currentMonthKey } from "./missions";
+import {
+  cachedFetch,
+  cacheKeyHome,
+  cacheKeyRuns,
+  cacheKeySubordinates,
+  cacheKeyWeights,
+  invalidateRequestCache,
+} from "./request-cache";
+
+export type { HomeStats } from "./home-stats";
 
 function notifyDataChanged() {
+  invalidateRequestCache();
   try {
     window.dispatchEvent(new Event(DATA_CHANGED_EVENT));
   } catch {
@@ -43,9 +57,31 @@ function notifyDataChanged() {
   }
 }
 
-export async function fetchRuns(employeeId?: string): Promise<RunEntry[]> {
+async function loadRuns(employeeId?: string): Promise<RunEntry[]> {
   if (getAuthMode() === "api") return apiFetchRuns(employeeId);
   return localGetRuns(employeeId);
+}
+
+async function loadWeights(employeeId?: string): Promise<WeightEntry[]> {
+  if (getAuthMode() === "api") return apiFetchWeights(employeeId);
+  return localGetWeights(employeeId);
+}
+
+async function loadSubordinates(managerId: string): Promise<Employee[]> {
+  if (getAuthMode() === "api") return apiFetchSubordinates();
+  return localTeamRoster(managerId);
+}
+
+export async function fetchRuns(employeeId?: string): Promise<RunEntry[]> {
+  const id = employeeId?.trim();
+  if (!id) return loadRuns(employeeId);
+  return cachedFetch(cacheKeyRuns(id), () => loadRuns(id));
+}
+
+export async function fetchWeights(employeeId?: string): Promise<WeightEntry[]> {
+  const id = employeeId?.trim();
+  if (!id) return loadWeights(employeeId);
+  return cachedFetch(cacheKeyWeights(id), () => loadWeights(id));
 }
 
 export async function saveRunEntry(
@@ -86,11 +122,6 @@ export async function setRunEntryStatus(
   }
   localSetRunStatus(id, status, rejectNote);
   if (options?.notify !== false) notifyDataChanged();
-}
-
-export async function fetchWeights(employeeId?: string): Promise<WeightEntry[]> {
-  if (getAuthMode() === "api") return apiFetchWeights(employeeId);
-  return localGetWeights(employeeId);
 }
 
 export async function saveWeightEntry(
@@ -161,16 +192,39 @@ export async function staffEditWeightEntry(
 }
 
 export async function fetchSubordinates(managerId: string): Promise<Employee[]> {
-  if (getAuthMode() === "api") return apiFetchSubordinates();
-  return localTeamRoster(managerId);
+  const id = managerId.trim();
+  if (!id) return [];
+  return cachedFetch(cacheKeySubordinates(id), () => loadSubordinates(id));
+}
+
+export async function fetchHomeStats(
+  employeeId: string,
+  opts: { manageTeam: boolean; managerId: string },
+): Promise<HomeStats> {
+  const id = employeeId.trim();
+  const monthKey = currentMonthKey();
+  if (!id) {
+    return computeHomeStats([], [], monthKey, 0);
+  }
+
+  return cachedFetch(cacheKeyHome(id, monthKey), async () => {
+    if (getAuthMode() === "api") {
+      return apiFetchHomeStats();
+    }
+    const [runs, weights] = await Promise.all([loadRuns(id), loadWeights(id)]);
+    const teamCount = opts.manageTeam
+      ? (await loadSubordinates(opts.managerId)).length
+      : 0;
+    return computeHomeStats(runs, weights, monthKey, teamCount);
+  });
 }
 
 async function countPendingRows(employeeIds: string[]): Promise<number> {
   const set = new Set(employeeIds);
   if (getAuthMode() === "api") {
     const results = await Promise.all(
-      employeeIds.map(async (id) => {
-        const [runs, weights] = await Promise.all([apiFetchRuns(id), apiFetchWeights(id)]);
+      employeeIds.map(async (memberId) => {
+        const [runs, weights] = await Promise.all([fetchRuns(memberId), fetchWeights(memberId)]);
         return { runs, weights };
       }),
     );
@@ -186,7 +240,7 @@ async function countPendingRows(employeeIds: string[]): Promise<number> {
 
 export async function countPendingForMember(_leadId: string, memberId: string): Promise<number> {
   if (getAuthMode() === "local") return localPendingCountForMember(memberId);
-  const [runs, weights] = await Promise.all([apiFetchRuns(memberId), apiFetchWeights(memberId)]);
+  const [runs, weights] = await Promise.all([fetchRuns(memberId), fetchWeights(memberId)]);
   return runs.filter((r) => r.status === "pending").length + weights.filter((w) => w.status === "pending").length;
 }
 
