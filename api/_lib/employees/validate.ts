@@ -1,4 +1,5 @@
 import type { DbRole } from "../auth/types.js";
+import { parseDbRoleInput } from "../auth/roles.js";
 
 export interface EmployeeFormInput {
   employeeId: string;
@@ -28,8 +29,7 @@ export function normalizeEmployeeInput(raw: Record<string, unknown>): EmployeeFo
     position: String(raw.position ?? "").trim(),
     department: String(raw.department ?? "").trim(),
     managerId: managerRaw || null,
-    role:
-      roleRaw === "super_admin" ? "super_admin" : roleRaw === "admin" ? "admin" : "employee",
+    role: parseDbRoleInput(roleRaw),
     isActive: activeRaw === false || activeRaw === "false" ? false : Boolean(activeRaw ?? true),
   };
 }
@@ -84,7 +84,7 @@ export function validateEmployeeInput(
     }
   }
 
-  if (input.role !== "employee" && input.role !== "admin" && input.role !== "super_admin") {
+  if (input.role !== "employee" && input.role !== "checker" && input.role !== "super_admin") {
     errors.push({ field: "role", message: "บทบาทไม่ถูกต้อง" });
   }
 

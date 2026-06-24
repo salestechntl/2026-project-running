@@ -1,11 +1,12 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { bearerToken, verifyToken } from "../_lib/auth/jwt.js";
 import type { AuthUser, MeResponse } from "../_lib/auth/types.js";
+import { isCheckerRole, normalizeDbRole } from "../_lib/auth/roles.js";
 import { loadHomeStats } from "../_lib/home/stats.js";
 import { createAdminClient, isSupabaseConfigured } from "../_lib/supabase/admin.js";
 
 function canManageTeam(isLead: boolean, role: string): boolean {
-  return isLead || role === "admin" || role === "super_admin";
+  return isLead || isCheckerRole(role) || role === "super_admin";
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -20,23 +21,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const payload = verifyToken(token);
+    const role = normalizeDbRole(payload.role);
     const user: AuthUser = {
       id: payload.sub,
       name: payload.name,
       position: payload.position,
       department: payload.department,
       managerId: payload.managerId,
-      role: payload.role,
+      role,
     };
 
-    const isAdmin = payload.role === "admin";
+    const isChecker = isCheckerRole(payload.role);
     const isSuperAdmin = payload.role === "super_admin";
     const manageTeam = canManageTeam(payload.isLead, payload.role);
 
     const body: MeResponse = {
       user,
       isLead: payload.isLead,
-      isAdmin,
+      isChecker,
       isSuperAdmin,
     };
 

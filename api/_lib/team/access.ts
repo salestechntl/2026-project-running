@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DbRole, JwtPayload } from "../auth/types.js";
+import { isCheckerRole } from "../auth/roles.js";
 
 export interface TeamEmployee {
   id: string;
@@ -20,36 +21,46 @@ export interface DbEmployeeRow {
 
 export type AccessActor = Pick<JwtPayload, "sub" | "isLead" | "role">;
 
-export function isOrgAdmin(role: DbRole): boolean {
-  return role === "admin";
+export function isChecker(role: DbRole | string): boolean {
+  return isCheckerRole(role);
+}
+
+/** @deprecated use isChecker */
+export function isOrgAdmin(role: DbRole | string): boolean {
+  return isCheckerRole(role);
 }
 
 export function isSuperAdminRole(role: DbRole): boolean {
   return role === "super_admin";
 }
 
-/** Admin / Super Admin — เห็นและจัดการข้อมูลทีมทั้งองค์กร */
-export function hasOrgWideTeamAccess(role: DbRole): boolean {
-  return isOrgAdmin(role) || isSuperAdminRole(role);
+/** Checker / Super Admin — เห็นและจัดการข้อมูลทีมทั้งองค์กร */
+export function hasOrgWideTeamAccess(role: DbRole | string): boolean {
+  return isCheckerRole(role) || isSuperAdminRole(role as DbRole);
 }
 
 export function canApproveEntries(actor: Pick<JwtPayload, "isLead" | "role">): boolean {
   return actor.isLead || hasOrgWideTeamAccess(actor.role);
 }
 
-/** หัวหน้าทีม + Admin — ไม่ผ่านรายการรออนุมัติ */
+/** หัวหน้าทีม + Checker — ไม่ผ่านรายการรออนุมัติ */
 export function canRejectPending(actor: Pick<JwtPayload, "isLead" | "role">): boolean {
   return canApproveEntries(actor);
 }
 
-/** Admin / Super Admin — ไม่ผ่านรายการที่อนุมัติแล้ว */
+/** Checker / Super Admin — ไม่ผ่านรายการที่อนุมัติแล้ว */
 export function canRejectApproved(actor: Pick<JwtPayload, "role">): boolean {
   return hasOrgWideTeamAccess(actor.role);
 }
 
-/** Admin / Super Admin — แก้ไขรายการที่ไม่ผ่านในหน้าทีม */
-export function canEditRejectedEntry(actor: Pick<JwtPayload, "role">): boolean {
+/** Checker / Super Admin — แก้ไขรายการในหน้าทีม (อนุมัติแล้ว / ไม่ผ่าน / หมดอายุ) */
+export function canStaffEditEntry(actor: Pick<JwtPayload, "role">): boolean {
   return hasOrgWideTeamAccess(actor.role);
+}
+
+/** @deprecated use canStaffEditEntry */
+export function canEditRejectedEntry(actor: Pick<JwtPayload, "role">): boolean {
+  return canStaffEditEntry(actor);
 }
 
 export function canSelfApprove(actor: Pick<JwtPayload, "isLead" | "role">, employeeId: string, actorId: string): boolean {
@@ -91,7 +102,7 @@ export function subordinatesFromRows(managerId: string, rows: DbEmployeeRow[]): 
   return out;
 }
 
-/** พนักงาน active ทั้งองค์กร (ยกเว้นตัวเอง) — สำหรับ admin / super_admin */
+/** พนักงาน active ทั้งองค์กร (ยกเว้นตัวเอง) — สำหรับ checker / super_admin */
 export function allEmployeesExcept(actorId: string, rows: DbEmployeeRow[]): TeamEmployee[] {
   return rows
     .filter((row) => row.employee_id !== actorId)

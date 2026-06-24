@@ -1,6 +1,6 @@
 /** Shared domain types (frontend) */
 
-export type UserRole = "employee" | "admin" | "super_admin";
+export type UserRole = "employee" | "checker" | "super_admin";
 
 export interface Employee {
   id: string;

@@ -13,6 +13,7 @@
  */
 
 import type { Employee } from "./types";
+import { isCheckerRole } from "./roles";
 
 export type { Employee };
 
@@ -47,16 +48,21 @@ export function isSuperAdmin(emp: Employee): boolean {
   return emp.role === "super_admin";
 }
 
+export function isChecker(emp: Pick<Employee, "role">): boolean {
+  return isCheckerRole(emp.role ?? "employee");
+}
+
+/** @deprecated use isChecker */
 export function isOrgAdmin(emp: Pick<Employee, "role">): boolean {
-  return emp.role === "admin";
+  return isChecker(emp);
 }
 
-/** Admin / Super Admin — เห็นและจัดการข้อมูลทีมทั้งองค์กร */
+/** Checker / Super Admin — เห็นและจัดการข้อมูลทีมทั้งองค์กร */
 export function hasOrgWideTeamAccess(emp: Pick<Employee, "role">): boolean {
-  return emp.role === "admin" || emp.role === "super_admin";
+  return isCheckerRole(emp.role ?? "employee") || emp.role === "super_admin";
 }
 
-/** ลูกทีมทั้งสายงาน หรือทั้งองค์กรสำหรับ admin / super_admin */
+/** ลูกทีมทั้งสายงาน หรือทั้งองค์กรสำหรับ checker / super_admin */
 export function teamRoster(actorId: string): Employee[] {
   const emp = findEmployee(actorId);
   if (emp && hasOrgWideTeamAccess(emp)) {

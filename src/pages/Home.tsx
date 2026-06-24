@@ -8,8 +8,8 @@ import { Stat, LoadingBlock, Card } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 export default function Home() {
-  const { user, isLead, isAdmin, isSuperAdmin } = useAuth();
-  const orgWideTeam = isAdmin || isSuperAdmin;
+  const { user, isLead, isChecker, isSuperAdmin } = useAuth();
+  const orgWideTeam = isChecker || isSuperAdmin;
   const manageTeam = isLead || orgWideTeam;
   const { stats, loading: statsLoading } = useHomeStats(user?.id, manageTeam, user?.id);
 

@@ -7,7 +7,7 @@
  * job then reads rows where status = NEW.
  */
 
-import { EMPLOYEES, findEmployee, isOrgAdmin, isTeamLead, subordinates } from "./data";
+import { EMPLOYEES, findEmployee, isChecker, isTeamLead, subordinates } from "./data";
 import { shouldExpirePendingMs } from "./expire";
 import { currentMonthKey, monthOf, missionName } from "./missions";
 
@@ -24,7 +24,7 @@ export const ENTRY_STATUS_LABEL: Record<EntryStatus, string> = {
 function resolveStatusForEmployee(employeeId: string, explicit?: EntryStatus): EntryStatus {
   if (explicit) return explicit;
   const emp = findEmployee(employeeId);
-  return isTeamLead(employeeId) || (emp != null && isOrgAdmin(emp)) ? "approved" : "pending";
+  return isTeamLead(employeeId) || (emp != null && isChecker(emp)) ? "approved" : "pending";
 }
 
 /** ประเภทการวิ่ง: วัดวินัย (ค่าเริ่มต้น) / ภารกิจประจำเดือน */
@@ -48,6 +48,7 @@ export interface RunEntry {
   note?: string;
   status: EntryStatus;
   rejectNote?: string;
+  staffEditNote?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -64,6 +65,7 @@ export interface WeightEntry {
   proofImageRef?: string; // storage path สำหรับ round-trip ตอนแก้ไข (API mode)
   status: EntryStatus;
   rejectNote?: string;
+  staffEditNote?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -207,7 +209,7 @@ export function setRunStatus(id: string, status: EntryStatus, rejectNote?: strin
   notifyDataChanged();
 }
 
-/** Admin แก้ไขรายการวิ่งที่ไม่ผ่าน (หน้าทีม) */
+/** Admin แก้ไขรายการวิ่ง (อนุมัติแล้ว / ไม่ผ่าน / หมดอายุ) */
 export function staffEditRun(
   id: string,
   patch: {
@@ -215,17 +217,19 @@ export function staffEditRun(
     runType: RunType;
     distanceKm: number;
     durationSec: number;
-    note?: string;
     missionMonth?: string;
-    status: EntryStatus;
+    status: "approved" | "rejected";
     rejectNote?: string;
+    staffEditNote: string;
   },
 ): RunEntry {
   const rows = read<RunEntry>(RUN_KEY);
   const idx = rows.findIndex((r) => r.id === id);
   if (idx < 0) throw new Error("ไม่พบรายการ");
   const cur = rows[idx];
-  if (cur.status !== "rejected") throw new Error("แก้ไขได้เฉพาะรายการที่ไม่ผ่าน");
+  if (cur.status !== "approved" && cur.status !== "rejected" && cur.status !== "expired") {
+    throw new Error("แก้ไขได้เฉพาะรายการที่อนุมัติแล้ว ไม่ผ่าน หรือหมดอายุ");
+  }
   if (patch.status === "rejected" && !patch.rejectNote?.trim()) {
     throw new Error("กรุณาระบุเหตุผลที่ไม่ผ่าน");
   }
@@ -237,9 +241,9 @@ export function staffEditRun(
     distanceKm: patch.distanceKm,
     durationSec: patch.durationSec,
     missionTag,
-    note: patch.note,
     status: patch.status,
     rejectNote: patch.status === "rejected" ? patch.rejectNote : undefined,
+    staffEditNote: patch.staffEditNote.trim(),
     updatedAt: Date.now(),
   };
   write(RUN_KEY, rows);
@@ -332,20 +336,23 @@ export function setWeightStatus(id: string, status: EntryStatus, rejectNote?: st
   notifyDataChanged();
 }
 
-/** Admin แก้ไขรายการน้ำหนักที่ไม่ผ่าน (หน้าทีม) */
+/** Admin แก้ไขรายการน้ำหนัก (อนุมัติแล้ว / ไม่ผ่าน / หมดอายุ) */
 export function staffEditWeight(
   id: string,
   patch: {
     weightKg: number;
-    status: EntryStatus;
+    status: "approved" | "rejected";
     rejectNote?: string;
+    staffEditNote: string;
   },
 ): WeightEntry {
   const rows = read<WeightEntry>(WEIGHT_KEY);
   const idx = rows.findIndex((r) => r.id === id);
   if (idx < 0) throw new Error("ไม่พบรายการ");
   const cur = rows[idx];
-  if (cur.status !== "rejected") throw new Error("แก้ไขได้เฉพาะรายการที่ไม่ผ่าน");
+  if (cur.status !== "approved" && cur.status !== "rejected" && cur.status !== "expired") {
+    throw new Error("แก้ไขได้เฉพาะรายการที่อนุมัติแล้ว ไม่ผ่าน หรือหมดอายุ");
+  }
   if (patch.status === "rejected" && !patch.rejectNote?.trim()) {
     throw new Error("กรุณาระบุเหตุผลที่ไม่ผ่าน");
   }
@@ -354,6 +361,7 @@ export function staffEditWeight(
     weightKg: patch.weightKg,
     status: patch.status,
     rejectNote: patch.status === "rejected" ? patch.rejectNote : undefined,
+    staffEditNote: patch.staffEditNote.trim(),
     updatedAt: Date.now(),
   };
   write(WEIGHT_KEY, rows);

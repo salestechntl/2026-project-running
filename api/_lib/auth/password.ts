@@ -3,7 +3,12 @@ import bcrypt from "bcryptjs";
 export const PASSWORD_MIN_LEN = 4;
 export const PASSWORD_MAX_LEN = 30;
 
+const THAI_CHAR_PATTERN = /[\u0E00-\u0E7F]/;
+
 export function validatePassword(password: string): string | null {
+  if (THAI_CHAR_PATTERN.test(password)) {
+    return "รหัสผ่านห้ามมีตัวอักษรภาษาไทย — ใช้ภาษาอังกฤษ ตัวเลข หรือสัญลักษณ์เท่านั้น";
+  }
   const len = password.length;
   if (len < PASSWORD_MIN_LEN || len > PASSWORD_MAX_LEN) {
     return `รหัสผ่านต้องมีความยาว ${PASSWORD_MIN_LEN}-${PASSWORD_MAX_LEN} ตัวอักษร`;

@@ -5,6 +5,25 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** ลบ accent + แปลงเป็นตัวพิมพ์เล็ก (en-US) สำหรับค้นหาแบบไม่สนตัวเล็ก–ใหญ่ */
+export function normalizeForSearch(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleLowerCase("en-US");
+}
+
+export function matchesSearchText(haystack: string, query: string): boolean {
+  const needle = normalizeForSearch(query.trim());
+  if (!needle) return true;
+  return normalizeForSearch(haystack).includes(needle);
+}
+
+export function matchesEmployeeSearch(member: { id: string; name: string }, query: string): boolean {
+  if (!query.trim()) return true;
+  return matchesSearchText(member.id, query) || matchesSearchText(member.name, query);
+}
+
 /** Today as yyyy-mm-dd in local time (for <input type="date">). */
 export function todayISO(): string {
   const d = new Date();

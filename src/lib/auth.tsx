@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { findEmployee, isOrgAdmin, isSuperAdmin as employeeIsSuperAdmin, isTeamLead } from "./data";
+import { findEmployee, isChecker as employeeIsChecker, isSuperAdmin as employeeIsSuperAdmin, isTeamLead } from "./data";
 import { getAuthMode } from "./auth-config";
 import { apiLogin, apiMe, apiSetPassword, ApiError, getStoredToken, setStoredToken } from "./api";
 import {
@@ -19,7 +19,7 @@ export interface LoginResult {
 interface AuthState {
   user: Employee | null;
   isLead: boolean;
-  isAdmin: boolean;
+  isChecker: boolean;
   isSuperAdmin: boolean;
   loading: boolean;
   authMode: "api" | "local";
@@ -35,21 +35,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const authMode = getAuthMode();
   const [user, setUser] = useState<Employee | null>(null);
   const [isLead, setIsLead] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isChecker, setIsChecker] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [loading, setLoading] = useState(authMode === "api");
 
-  const applyUser = useCallback((emp: Employee, lead: boolean, admin: boolean, superAdmin: boolean) => {
+  const applyUser = useCallback((emp: Employee, lead: boolean, checker: boolean, superAdmin: boolean) => {
     setUser(emp);
     setIsLead(lead);
-    setIsAdmin(admin);
+    setIsChecker(checker);
     setIsSuperAdmin(superAdmin);
   }, []);
 
   const clearSession = useCallback(() => {
     setUser(null);
     setIsLead(false);
-    setIsAdmin(false);
+    setIsChecker(false);
     setIsSuperAdmin(false);
     setStoredToken(null);
     localStorage.removeItem(LOCAL_SESSION_KEY);
@@ -60,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const id = localStorage.getItem(LOCAL_SESSION_KEY);
       if (id) {
         const emp = findEmployee(id);
-        if (emp) applyUser(emp, isTeamLead(emp.id), isOrgAdmin(emp), employeeIsSuperAdmin(emp));
+        if (emp) applyUser(emp, isTeamLead(emp.id), employeeIsChecker(emp), employeeIsSuperAdmin(emp));
       }
       setLoading(false);
       return;
@@ -84,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             role: data.user.role,
           },
           data.isLead,
-          data.isAdmin,
+          data.isChecker,
           data.isSuperAdmin,
         );
       })
@@ -109,7 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { ok: false, error: "รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง" };
       }
       localStorage.setItem(LOCAL_SESSION_KEY, emp.id);
-      applyUser(emp, isTeamLead(emp.id), isOrgAdmin(emp), employeeIsSuperAdmin(emp));
+      applyUser(emp, isTeamLead(emp.id), employeeIsChecker(emp), employeeIsSuperAdmin(emp));
       return { ok: true };
     }
 
@@ -126,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: data.user.role,
         },
         data.isLead,
-        data.isAdmin,
+        data.isChecker,
         data.isSuperAdmin,
       );
       return { ok: true };
@@ -164,7 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isLead, isAdmin, isSuperAdmin, loading, authMode, login, setPassword, logout }}
+      value={{ user, isLead, isChecker, isSuperAdmin, loading, authMode, login, setPassword, logout }}
     >
       {children}
     </AuthContext.Provider>

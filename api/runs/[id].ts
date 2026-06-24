@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAuth } from "../_lib/auth/require.js";
 import { createAdminClient, isSupabaseConfigured } from "../_lib/supabase/admin.js";
-import { canAccessEmployee, canApproveEntries, canEditRejectedEntry } from "../_lib/team/access.js";
+import { canAccessEmployee, canApproveEntries, canStaffEditEntry } from "../_lib/team/access.js";
 import { mapRun, validateImageSlots, type DbRunRow } from "../_lib/entries/map.js";
 import { approvalFieldsForStatus } from "../_lib/entries/approval-fields.js";
 import { canActorApprove, canActorReject } from "../_lib/entries/status.js";
@@ -9,6 +9,12 @@ import { expireEntryIfStale } from "../_lib/entries/expire.js";
 import { attachRunImages } from "../_lib/entries/attach-run-images.js";
 import { isRunDateAllowed } from "../_lib/entries/run-date-bounds.js";
 import { loadAttachmentViews, snapshotEntry } from "../_lib/storage/attachments.js";
+import {
+  isStaffEditableStatus,
+  normalizeStaffEditNote,
+  parseStaffEditTargetStatus,
+  validateStaffEditNote,
+} from "../_lib/entries/staff-edit-note.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = requireAuth(req);
@@ -90,15 +96,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!allowed) return res.status(403).json({ error: "ไม่มีสิทธิ์จัดการรายการนี้" });
 
       if (req.body?.staffEdit === true) {
-        if (!canEditRejectedEntry(auth)) {
-          return res.status(403).json({ error: "เฉพาะ Admin / Super Admin เท่านั้น" });
+        if (!canStaffEditEntry(auth)) {
+          return res.status(403).json({ error: "เฉพาะ Checker / Super Admin เท่านั้น" });
         }
-        if (row.status !== "rejected") {
-          return res.status(400).json({ error: "แก้ไขได้เฉพาะรายการที่ไม่ผ่าน" });
+        if (!isStaffEditableStatus(row.status)) {
+          return res.status(400).json({ error: "แก้ไขได้เฉพาะรายการที่อนุมัติแล้ว ไม่ผ่าน หรือหมดอายุ" });
         }
 
-        const nextStatus = req.body?.status;
-        if (nextStatus !== "pending" && nextStatus !== "approved" && nextStatus !== "rejected") {
+        const nextStatus = parseStaffEditTargetStatus(req.body?.status);
+        if (!nextStatus) {
           return res.status(400).json({ error: "สถานะไม่ถูกต้อง" });
         }
 
@@ -106,8 +112,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const runType = req.body?.runType ?? req.body?.run_type ?? row.run_type;
         const distanceKm = Number(req.body?.distanceKm ?? req.body?.distance_km);
         const durationSec = Number(req.body?.durationSec ?? req.body?.duration_sec);
-        const noteRaw = req.body?.note;
-        const note = noteRaw == null || noteRaw === "" ? null : String(noteRaw).trim();
         const missionMonth = String(req.body?.missionMonth ?? req.body?.mission_month ?? runDate.slice(0, 7)).trim();
 
         if (!runDate || !/^\d{4}-\d{2}-\d{2}$/.test(runDate)) {
@@ -137,7 +141,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
 
-        await snapshotEntry(supabase, "run", id, row as unknown as Record<string, unknown>, auth.sub, "staff_edit");
+        const staffEditNoteErr = validateStaffEditNote(req.body?.staffEditNote ?? req.body?.staff_edit_note);
+        if (staffEditNoteErr) {
+          return res.status(400).json({ error: staffEditNoteErr });
+        }
+        const staffEditNote = normalizeStaffEditNote(String(req.body?.staffEditNote ?? req.body?.staff_edit_note));
+
+        await snapshotEntry(supabase, "run", id, row as unknown as Record<string, unknown>, auth.sub, staffEditNote);
 
         const { data: updated, error: updateError } = await supabase
           .from("run_entries")
@@ -147,7 +157,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             distance_km: distanceKm,
             duration_sec: durationSec,
             mission_month: missionMonth,
-            note,
+            staff_edit_note: staffEditNote,
             ...approvalFieldsForStatus(nextStatus, auth.sub, { rejectNote }),
           })
           .eq("id", id)
@@ -164,7 +174,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           action: "run.staff_edit",
           target_type: "run",
           target_id: id,
-          metadata: { status: nextStatus },
+          metadata: { status: nextStatus, staff_edit_note: staffEditNote },
         });
 
         const views = await loadAttachmentViews(supabase, "run", [id]);
@@ -187,7 +197,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (status === "approved") {
         if (!canActorApprove(activeRow.status, auth)) {
           if (activeRow.status === "expired") {
-            return res.status(403).json({ error: "เฉพาะ Admin / Super Admin เท่านั้นที่อนุมัติรายการหมดอายุได้" });
+            return res.status(403).json({ error: "เฉพาะ Checker / Super Admin เท่านั้นที่อนุมัติรายการหมดอายุได้" });
           }
           return res.status(400).json({ error: "อนุมัติได้เฉพาะรายการที่รออนุมัติ" });
         }
@@ -224,7 +234,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (!canActorReject(activeRow.status, auth)) {
         if (activeRow.status === "expired") {
-          return res.status(403).json({ error: "เฉพาะ Admin / Super Admin เท่านั้นที่ไม่อนุมัติรายการหมดอายุได้" });
+          return res.status(403).json({ error: "เฉพาะ Checker / Super Admin เท่านั้นที่ไม่อนุมัติรายการหมดอายุได้" });
         }
         return res.status(400).json({ error: "ไม่สามารถปฏิเสธรายการนี้ได้" });
       }

@@ -490,29 +490,39 @@ const RunHistory = forwardRef(function RunHistory(
   },
   ref: ForwardedRef<HTMLDivElement>,
 ) {
-  const { isLead, isAdmin } = useAuth();
-  const canSelfManage = isLead || isAdmin;
+  const { isLead, isChecker } = useAuth();
+  const canSelfManage = isLead || isChecker;
   const [confirmId, setConfirmId] = useState<string | null>(null);
-  if (loading) {
-    return (
-      <div ref={ref} className="scroll-mt-6 animate-fade-up">
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          ประวัติการบันทึกของฉัน
-        </h2>
-        <Card>
-          <LoadingBlock compact label="กำลังโหลดประวัติ…" />
-        </Card>
-      </div>
-    );
-  }
-  if (runs.length === 0) return null;
+  const [page, setPage] = useState(1);
+
+  const sortedRuns = useMemo(
+    () => [...runs].sort((a, b) => b.createdAt - a.createdAt),
+    [runs],
+  );
+  const totalPages = Math.max(1, Math.ceil(sortedRuns.length / HISTORY_PAGE_SIZE));
+
+  useEffect(() => {
+    setPage((p) => Math.min(p, totalPages));
+  }, [sortedRuns.length, totalPages]);
+
+  const pageRuns = useMemo(() => {
+    const start = (page - 1) * HISTORY_PAGE_SIZE;
+    return sortedRuns.slice(start, start + HISTORY_PAGE_SIZE);
+  }, [sortedRuns, page]);
+
   return (
-    <div ref={ref} className="animate-fade-up scroll-mt-6">
+    <div ref={ref} className="scroll-mt-6 animate-fade-up">
       <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         ประวัติการบันทึกของฉัน
       </h2>
-      <Card className="divide-y divide-border overflow-hidden">
-        {runs.map((r) => {
+      <Card className={!loading && sortedRuns.length > 0 ? "divide-y divide-border overflow-hidden" : undefined}>
+        {loading ? (
+          <LoadingBlock compact label="กำลังโหลดประวัติ…" />
+        ) : sortedRuns.length === 0 ? (
+          <p className="p-8 text-center text-sm text-muted-foreground">ยังไม่มีการบันทึกการวิ่ง</p>
+        ) : (
+          <>
+            {pageRuns.map((r) => {
           const editable = canOwnerEditRun(r.status, canSelfManage);
           const deletable = canOwnerDeleteRun(r.status);
           return (
@@ -577,6 +587,11 @@ const RunHistory = forwardRef(function RunHistory(
                   เหตุผลจากหัวหน้า: {r.rejectNote}
                 </p>
               )}
+              {r.staffEditNote && (
+                <p className={cn("mt-2", staffEditNoteClass)}>
+                  แก้ไขโดยเจ้าหน้าที่: {r.staffEditNote}
+                </p>
+              )}
               {r.status === "expired" && (
                 <p className="mt-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
                   รายการหมดอายุ (เกิน 5 วันรออนุมัติ) — กรุณาส่งรายการใหม่
@@ -585,6 +600,13 @@ const RunHistory = forwardRef(function RunHistory(
             </div>
           );
         })}
+            <HistoryPagination
+              page={page}
+              totalItems={sortedRuns.length}
+              onPageChange={setPage}
+            />
+          </>
+        )}
       </Card>
 
       <ConfirmDialog
@@ -616,6 +638,57 @@ const WEIGHT_PERIOD_LABEL: Record<WeightPeriod, string> = {
 };
 
 const rejectedNoteClass = "rounded-md bg-danger/10 px-3 py-2 text-xs text-danger";
+const staffEditNoteClass = "rounded-md bg-primary/10 px-3 py-2 text-xs text-primary";
+const HISTORY_PAGE_SIZE = 5;
+
+function HistoryPagination({
+  page,
+  totalItems,
+  onPageChange,
+}: {
+  page: number;
+  totalItems: number;
+  onPageChange: (page: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(totalItems / HISTORY_PAGE_SIZE));
+  if (totalItems <= HISTORY_PAGE_SIZE) return null;
+
+  const from = (page - 1) * HISTORY_PAGE_SIZE + 1;
+  const to = Math.min(page * HISTORY_PAGE_SIZE, totalItems);
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3">
+      <p className="text-xs text-muted-foreground">
+        แสดง <span className="tnum">{from}–{to}</span> จาก <span className="tnum">{totalItems}</span> รายการ
+      </p>
+      <div className="flex items-center gap-1.5">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 px-2.5 text-xs"
+          disabled={page <= 1}
+          onClick={() => onPageChange(page - 1)}
+        >
+          ก่อนหน้า
+        </Button>
+        <span className="tnum px-1 text-xs text-muted-foreground">
+          {page}/{totalPages}
+        </span>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 px-2.5 text-xs"
+          disabled={page >= totalPages}
+          onClick={() => onPageChange(page + 1)}
+        >
+          ถัดไป
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function WeightTab({ onSaved }: { onSaved: (p: WeightPeriod) => void }) {
   const { user } = useAuth();
@@ -762,31 +835,36 @@ const WeightHistory = forwardRef(function WeightHistory(
   },
   ref: ForwardedRef<HTMLDivElement>,
 ) {
-  if (loading) {
-    return (
-      <div ref={ref} className="scroll-mt-6 animate-fade-up">
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          ประวัติการบันทึกของฉัน
-        </h2>
-        <Card>
-          <LoadingBlock compact label="กำลังโหลดประวัติ…" />
-        </Card>
-      </div>
-    );
-  }
-  if (weights.length === 0) return null;
+  const [page, setPage] = useState(1);
 
-  const sorted = [...weights].sort(
-    (a, b) => b.month.localeCompare(a.month) || (a.period === "start" ? -1 : 1) - (b.period === "start" ? -1 : 1),
+  const sorted = useMemo(
+    () => [...weights].sort((a, b) => b.createdAt - a.createdAt),
+    [weights],
   );
+  const totalPages = Math.max(1, Math.ceil(sorted.length / HISTORY_PAGE_SIZE));
+
+  useEffect(() => {
+    setPage((p) => Math.min(p, totalPages));
+  }, [sorted.length, totalPages]);
+
+  const pageWeights = useMemo(() => {
+    const start = (page - 1) * HISTORY_PAGE_SIZE;
+    return sorted.slice(start, start + HISTORY_PAGE_SIZE);
+  }, [sorted, page]);
 
   return (
     <div ref={ref} className="scroll-mt-6 animate-fade-up">
       <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         ประวัติการบันทึกของฉัน
       </h2>
-      <Card className="divide-y divide-border overflow-hidden">
-        {sorted.map((w) => (
+      <Card className={!loading && sorted.length > 0 ? "divide-y divide-border overflow-hidden" : undefined}>
+        {loading ? (
+          <LoadingBlock compact label="กำลังโหลดประวัติ…" />
+        ) : sorted.length === 0 ? (
+          <p className="p-8 text-center text-sm text-muted-foreground">ยังไม่มีการบันทึกน้ำหนัก</p>
+        ) : (
+          <>
+            {pageWeights.map((w) => (
           <div key={w.id} className="p-4">
             <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1">
@@ -826,6 +904,11 @@ const WeightHistory = forwardRef(function WeightHistory(
                 เหตุผลจากหัวหน้า: {w.rejectNote}
               </p>
             )}
+            {w.staffEditNote && (
+              <p className={cn("mt-2", staffEditNoteClass)}>
+                แก้ไขโดยเจ้าหน้าที่: {w.staffEditNote}
+              </p>
+            )}
             {w.status === "expired" && (
               <p className="mt-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
                 รายการหมดอายุ (เกิน 5 วันรออนุมัติ) — กรุณาส่งรายการใหม่
@@ -833,6 +916,13 @@ const WeightHistory = forwardRef(function WeightHistory(
             )}
           </div>
         ))}
+            <HistoryPagination
+              page={page}
+              totalItems={sorted.length}
+              onPageChange={setPage}
+            />
+          </>
+        )}
       </Card>
     </div>
   );
@@ -851,8 +941,8 @@ function WeightCard({
   initial?: WeightEntry;
   onSaved: () => void;
 }) {
-  const { isLead, isAdmin } = useAuth();
-  const canSelfManage = isLead || isAdmin;
+  const { isLead, isChecker } = useAuth();
+  const canSelfManage = isLead || isChecker;
   const [weight, setWeight] = useState(initial ? String(initial.weightKg) : "");
   const [image, setImage] = useState<string | undefined>(initial?.proofImage);
   const [imageRef, setImageRef] = useState<string | undefined>(initial?.proofImageRef);

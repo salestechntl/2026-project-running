@@ -15,14 +15,15 @@ import {
   type EmployeeFormState,
   type EmployeeRecord,
 } from "@/lib/employee-admin";
+import { isCheckerRole } from "@/lib/roles";
 import { Badge, Button, Card, ConfirmDialog, Field, Input, Select, LoadingBlock } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { passwordsMatch, validatePassword } from "@/lib/password";
+import { passwordsMatch, validatePassword, PASSWORD_FORMAT_HINT } from "@/lib/password";
 
-const ROLE_LABEL = { employee: "พนักงาน", admin: "Admin", super_admin: "Super Admin" } as const;
+const ROLE_LABEL = { employee: "พนักงาน", checker: "Checker", super_admin: "Super Admin" } as const;
 
 type ActiveFilter = "all" | "active" | "inactive";
-type RoleFilter = "all" | "employee" | "admin" | "super_admin";
+type RoleFilter = "all" | "employee" | "checker" | "super_admin";
 
 function toForm(row: EmployeeRecord): EmployeeFormState {
   return {
@@ -81,7 +82,8 @@ export default function EmployeeAdmin() {
   const [resetId, setResetId] = useState<string | null>(null);
   const [resetPassword, setResetPassword] = useState("");
   const [resetConfirm, setResetConfirm] = useState("");
-  const [resetError, setResetError] = useState<string>();
+  const [resetPasswordError, setResetPasswordError] = useState<string>();
+  const [resetConfirmError, setResetConfirmError] = useState<string>();
   const [resetSaving, setResetSaving] = useState(false);
 
   const ctx = useMemo(() => {
@@ -96,7 +98,11 @@ export default function EmployeeAdmin() {
     return employees.filter((e) => {
       if (idQ && !e.employeeId.toLowerCase().includes(idQ)) return false;
       if (nameQ && !e.name.toLowerCase().includes(nameQ)) return false;
-      if (filterRole !== "all" && e.role !== filterRole) return false;
+      if (filterRole !== "all") {
+        if (filterRole === "checker") {
+          if (!isCheckerRole(e.role)) return false;
+        } else if (e.role !== filterRole) return false;
+      }
       if (filterActive === "active" && !e.isActive) return false;
       if (filterActive === "inactive" && e.isActive) return false;
       return true;
@@ -229,38 +235,42 @@ export default function EmployeeAdmin() {
     setResetId(employeeId);
     setResetPassword("");
     setResetConfirm("");
-    setResetError(undefined);
+    setResetPasswordError(undefined);
+    setResetConfirmError(undefined);
   }
 
   function closeResetPassword() {
     setResetId(null);
     setResetPassword("");
     setResetConfirm("");
-    setResetError(undefined);
+    setResetPasswordError(undefined);
+    setResetConfirmError(undefined);
   }
 
   async function confirmResetPassword() {
     if (!resetId) return;
+    setResetPasswordError(undefined);
+    setResetConfirmError(undefined);
+
     const passwordError = validatePassword(resetPassword);
     if (passwordError) {
-      setResetError(passwordError);
+      setResetPasswordError(passwordError);
       return;
     }
     const matchError = passwordsMatch(resetPassword, resetConfirm);
     if (matchError) {
-      setResetError(matchError);
+      setResetConfirmError(matchError);
       return;
     }
 
     setResetSaving(true);
-    setResetError(undefined);
     try {
       const updated = await apiResetEmployeePassword(resetId, resetPassword);
       setEmployees((rows) => rows.map((r) => (r.employeeId === updated.employeeId ? updated : r)));
       flash(`รีเซ็ตรหัสผ่านของ ${resetId} เรียบร้อยแล้ว`);
       closeResetPassword();
     } catch (e) {
-      setResetError(e instanceof Error ? e.message : "รีเซ็ตรหัสผ่านไม่สำเร็จ");
+      setResetPasswordError(e instanceof Error ? e.message : "รีเซ็ตรหัสผ่านไม่สำเร็จ");
     } finally {
       setResetSaving(false);
     }
@@ -321,7 +331,7 @@ export default function EmployeeAdmin() {
           <Select id="f-role" value={filterRole} onChange={(e) => setFilterRole(e.target.value as RoleFilter)}>
             <option value="all">ทั้งหมด</option>
             <option value="employee">พนักงาน</option>
-            <option value="admin">Admin</option>
+            <option value="checker">Checker</option>
             <option value="super_admin">Super Admin</option>
           </Select>
         </Field>
@@ -425,12 +435,12 @@ export default function EmployeeAdmin() {
                               className="h-9 text-xs"
                             >
                               <option value="employee">พนักงาน</option>
-                              <option value="admin">Admin</option>
+                              <option value="checker">Checker</option>
                               <option value="super_admin">Super Admin</option>
                             </Select>
                           ) : (
-                            <Badge tone={row.role === "super_admin" || row.role === "admin" ? "accent" : "neutral"}>
-                              {ROLE_LABEL[row.role]}
+                            <Badge tone={row.role === "super_admin" || isCheckerRole(row.role) ? "accent" : "neutral"}>
+                              {isCheckerRole(row.role) ? ROLE_LABEL.checker : ROLE_LABEL[row.role]}
                             </Badge>
                           )}
                           {editing && editErrors.role && (
@@ -559,7 +569,13 @@ export default function EmployeeAdmin() {
                 ตั้งรหัสผ่านใหม่ให้รหัสพนักงาน <span className="tnum font-medium text-foreground">{resetId}</span>
               </p>
             </div>
-            <Field label="รหัสผ่านใหม่" required htmlFor="reset-pw" hint="4–30 ตัวอักษร" error={resetError}>
+            <Field
+              label="รหัสผ่านใหม่"
+              required
+              htmlFor="reset-pw"
+              hint={PASSWORD_FORMAT_HINT}
+              error={resetPasswordError}
+            >
               <Input
                 id="reset-pw"
                 type="password"
@@ -567,11 +583,11 @@ export default function EmployeeAdmin() {
                 value={resetPassword}
                 onChange={(e) => {
                   setResetPassword(e.target.value);
-                  if (resetError) setResetError(undefined);
+                  if (resetPasswordError) setResetPasswordError(undefined);
                 }}
               />
             </Field>
-            <Field label="ยืนยันรหัสผ่านใหม่" required htmlFor="reset-confirm">
+            <Field label="ยืนยันรหัสผ่านใหม่" required htmlFor="reset-confirm" error={resetConfirmError}>
               <Input
                 id="reset-confirm"
                 type="password"
@@ -579,7 +595,7 @@ export default function EmployeeAdmin() {
                 value={resetConfirm}
                 onChange={(e) => {
                   setResetConfirm(e.target.value);
-                  if (resetError) setResetError(undefined);
+                  if (resetConfirmError) setResetConfirmError(undefined);
                 }}
               />
             </Field>
@@ -673,6 +689,7 @@ function EmployeeFields({
       <Field label="บทบาท" htmlFor="emp-role" error={errors.role}>
         <Select id="emp-role" value={form.role} onChange={(e) => onChange({ role: e.target.value as EmployeeFormState["role"] })}>
           <option value="employee">พนักงาน</option>
+          <option value="checker">Checker</option>
           <option value="super_admin">Super Admin</option>
         </Select>
       </Field>

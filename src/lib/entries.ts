@@ -161,10 +161,10 @@ export async function staffEditRunEntry(
     runType: RunEntry["runType"];
     distanceKm: number;
     durationSec: number;
-    note?: string;
     missionMonth?: string;
-    status: EntryStatus;
+    status: "approved" | "rejected";
     rejectNote?: string;
+    staffEditNote: string;
   },
 ): Promise<RunEntry> {
   if (getAuthMode() === "api") {
@@ -179,8 +179,9 @@ export async function staffEditWeightEntry(
   id: string,
   body: {
     weightKg: number;
-    status: EntryStatus;
+    status: "approved" | "rejected";
     rejectNote?: string;
+    staffEditNote: string;
   },
 ): Promise<WeightEntry> {
   if (getAuthMode() === "api") {

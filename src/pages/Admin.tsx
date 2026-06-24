@@ -14,10 +14,14 @@ import {
 } from "@/lib/entries";
 import { useRuns, useWeights } from "@/lib/hooks/useEntries";
 import { useSubordinates } from "@/lib/hooks/useTeam";
-import { formatThaiDate, formatThaiDateTime, formatDurationThai } from "@/lib/utils";
+import { formatThaiDate, formatThaiDateTime, formatDurationThai, matchesEmployeeSearch } from "@/lib/utils";
 import { Card, Badge, Button, LoadingBlock, Field, Input, Select } from "@/components/ui";
 import { DateSelect } from "@/components/DateSelect";
 import { cn } from "@/lib/utils";
+import { validateStaffEditNote, defaultStaffEditTargetStatus, type StaffEditTargetStatus } from "@/lib/staff-edit-note";
+
+const staffEditNoteAreaClass =
+  "min-h-[4.5rem] w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-[15px] text-foreground shadow-xs transition-colors placeholder:text-muted-foreground/70 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground";
 
 type WorkStatusFilter = "all" | EntryStatus;
 
@@ -47,11 +51,10 @@ function apiErrorMessage(e: unknown, fallback = "บันทึกไม่ส�
 }
 
 export default function Admin() {
-  const { user, isLead, isAdmin, isSuperAdmin } = useAuth();
-  const orgWideTeam = isAdmin || isSuperAdmin;
+  const { user, isLead, isChecker, isSuperAdmin } = useAuth();
+  const orgWideTeam = isChecker || isSuperAdmin;
   const canRejectPending = isLead || orgWideTeam;
-  const canRejectApproved = orgWideTeam;
-  const canEditRejected = orgWideTeam;
+  const canStaffEdit = orgWideTeam;
   const { team, loading: teamLoading } = useSubordinates(user?.id);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [gallery, setGallery] = useState<{ images: string[]; index: number } | null>(null);
@@ -71,14 +74,11 @@ export default function Admin() {
   }, [team]);
 
   const filteredTeam = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
     return team.filter((member) => {
       if (departmentFilter !== "all" && member.department !== departmentFilter) {
         return false;
       }
-      if (q && !member.id.toLowerCase().includes(q) && !member.name.toLowerCase().includes(q)) {
-        return false;
-      }
+      if (!matchesEmployeeSearch(member, searchQuery)) return false;
       if (countsLoading || statusFilter === "all") return true;
       return memberHasWorkStatus(workStatusByMember[member.id], statusFilter);
     });
@@ -194,10 +194,10 @@ export default function Admin() {
         runType: RunType;
         distanceKm: number;
         durationSec: number;
-        note?: string;
         missionMonth?: string;
-        status: EntryStatus;
+        status: StaffEditTargetStatus;
         rejectNote?: string;
+        staffEditNote: string;
       },
     ) => {
       const prevStatus = run.status;
@@ -205,8 +205,8 @@ export default function Admin() {
         ...patch,
         missionTag: patch.missionMonth ?? patch.date.slice(0, 7),
         rejectNote: patch.status === "rejected" ? patch.rejectNote : undefined,
+        staffEditNote: patch.staffEditNote.trim(),
       });
-      if (patch.status === "pending" && prevStatus !== "pending") bumpPending(run.employeeId, 1);
       try {
         const updated = await staffEditRunEntry(run.id, patch);
         patchRun(run.id, updated);
@@ -214,25 +214,24 @@ export default function Admin() {
         await refreshMemberWorkStatus(run.employeeId);
       } catch (e) {
         patchRun(run.id, run);
-        if (patch.status === "pending" && prevStatus !== "pending") bumpPending(run.employeeId, -1);
         throw e;
       }
     },
-    [patchRun, bumpPending, shiftStatusTotals, refreshMemberWorkStatus],
+    [patchRun, shiftStatusTotals, refreshMemberWorkStatus],
   );
 
   const applyStaffEditWeight = useCallback(
     async (
       weight: WeightEntry,
-      patch: { weightKg: number; status: EntryStatus; rejectNote?: string },
+      patch: { weightKg: number; status: StaffEditTargetStatus; rejectNote?: string; staffEditNote: string },
     ) => {
       const prevStatus = weight.status;
       patchWeight(weight.id, {
         weightKg: patch.weightKg,
         status: patch.status,
         rejectNote: patch.status === "rejected" ? patch.rejectNote : undefined,
+        staffEditNote: patch.staffEditNote.trim(),
       });
-      if (patch.status === "pending" && prevStatus !== "pending") bumpPending(weight.employeeId, 1);
       try {
         const updated = await staffEditWeightEntry(weight.id, patch);
         patchWeight(weight.id, updated);
@@ -240,24 +239,24 @@ export default function Admin() {
         await refreshMemberWorkStatus(weight.employeeId);
       } catch (e) {
         patchWeight(weight.id, weight);
-        if (patch.status === "pending" && prevStatus !== "pending") bumpPending(weight.employeeId, -1);
         throw e;
       }
     },
-    [patchWeight, bumpPending, shiftStatusTotals, refreshMemberWorkStatus],
+    [patchWeight, shiftStatusTotals, refreshMemberWorkStatus],
   );
 
   function canApproveForStatus(status: EntryStatus): boolean {
     if (status === "pending") return isLead || orgWideTeam;
-    if (status === "expired") return orgWideTeam;
     return false;
   }
 
   function canRejectForStatus(status: EntryStatus): boolean {
     if (status === "pending") return canRejectPending;
-    if (status === "approved") return canRejectApproved;
-    if (status === "expired") return orgWideTeam;
     return false;
+  }
+
+  function canStaffEditForStatus(status: EntryStatus): boolean {
+    return canStaffEdit && (status === "approved" || status === "rejected" || status === "expired");
   }
 
   useEffect(() => {
@@ -460,7 +459,7 @@ export default function Admin() {
                         run={r}
                         canApprove={canApproveForStatus(r.status)}
                         canReject={canRejectForStatus(r.status)}
-                        canEdit={canEditRejected && r.status === "rejected"}
+                        canEdit={canStaffEditForStatus(r.status)}
                         onPreview={openGallery}
                         onStatusChange={applyRunStatus}
                         onStaffEdit={applyStaffEditRun}
@@ -486,7 +485,7 @@ export default function Admin() {
                         weight={w}
                         canApprove={canApproveForStatus(w.status)}
                         canReject={canRejectForStatus(w.status)}
-                        canEdit={canEditRejected && w.status === "rejected"}
+                        canEdit={canStaffEditForStatus(w.status)}
                         onPreview={openGallery}
                         onStatusChange={applyWeightStatus}
                         onStaffEdit={applyStaffEditWeight}
@@ -638,14 +637,9 @@ function StatusControls({
     return (
       <div className="flex flex-wrap items-center justify-end gap-1.5">
         <Badge tone="neutral"><Clock className="h-3 w-3" /> {ENTRY_STATUS_LABEL.expired}</Badge>
-        {canApprove && (
-          <Button size="sm" onClick={onApprove} disabled={busy} className="h-8 px-2.5 text-xs">
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "อนุมัติ"}
-          </Button>
-        )}
-        {canReject && (
-          <Button size="sm" variant="outline" onClick={onReject} disabled={busy} className="h-8 px-2.5 text-xs">
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "ไม่ผ่าน"}
+        {canEdit && onEdit && (
+          <Button size="sm" variant="outline" onClick={onEdit} disabled={busy} className="h-8 px-2.5 text-xs">
+            แก้ไข
           </Button>
         )}
       </div>
@@ -655,9 +649,9 @@ function StatusControls({
     return (
       <div className="flex flex-wrap items-center justify-end gap-1.5">
         <Badge tone="success"><CheckCircle2 className="h-3 w-3" /> {ENTRY_STATUS_LABEL.approved}</Badge>
-        {canReject && (
-          <Button size="sm" variant="outline" onClick={onReject} disabled={busy} className="h-8 px-2.5 text-xs">
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "ไม่ผ่าน"}
+        {canEdit && onEdit && (
+          <Button size="sm" variant="outline" onClick={onEdit} disabled={busy} className="h-8 px-2.5 text-xs">
+            แก้ไข
           </Button>
         )}
       </div>
@@ -708,10 +702,10 @@ function RunRow({
       runType: RunType;
       distanceKm: number;
       durationSec: number;
-      note?: string;
       missionMonth?: string;
-      status: EntryStatus;
+      status: StaffEditTargetStatus;
       rejectNote?: string;
+      staffEditNote: string;
     },
   ) => Promise<void>;
 }) {
@@ -724,9 +718,9 @@ function RunRow({
   const [h, setH] = useState(String(Math.floor(run.durationSec / 3600)));
   const [m, setM] = useState(String(Math.floor((run.durationSec % 3600) / 60)));
   const [s, setS] = useState(String(run.durationSec % 60));
-  const [note, setNote] = useState(run.note ?? "");
-  const [status, setStatus] = useState<EntryStatus>(run.status);
+  const [status, setStatus] = useState<StaffEditTargetStatus>(defaultStaffEditTargetStatus(run.status));
   const [rejectNote, setRejectNote] = useState(run.rejectNote ?? "");
+  const [staffEditNote, setStaffEditNote] = useState("");
 
   useEffect(() => {
     if (!editing) return;
@@ -736,9 +730,9 @@ function RunRow({
     setH(String(Math.floor(run.durationSec / 3600)));
     setM(String(Math.floor((run.durationSec % 3600) / 60)));
     setS(String(run.durationSec % 60));
-    setNote(run.note ?? "");
-    setStatus(run.status);
+    setStatus(defaultStaffEditTargetStatus(run.status));
     setRejectNote(run.rejectNote ?? "");
+    setStaffEditNote("");
   }, [editing, run]);
 
   async function act(action: () => Promise<void>) {
@@ -771,16 +765,21 @@ function RunRow({
       window.alert("กรุณาระบุเหตุผลที่ไม่ผ่าน");
       return;
     }
+    const staffNoteErr = validateStaffEditNote(staffEditNote);
+    if (staffNoteErr) {
+      window.alert(staffNoteErr);
+      return;
+    }
     await act(async () => {
       await onStaffEdit(run, {
         date,
         runType,
         distanceKm: dist,
         durationSec,
-        note: note.trim() || undefined,
         missionMonth: date.slice(0, 7),
         status,
         rejectNote: status === "rejected" ? rejectNote.trim() : undefined,
+        staffEditNote: staffEditNote.trim(),
       });
       setEditing(false);
     });
@@ -816,12 +815,8 @@ function RunRow({
               <Input type="number" min="0" max="59" value={s} onChange={(e) => setS(e.target.value)} className="tnum w-16" placeholder="ว." />
             </div>
           </Field>
-          <Field label="หมายเหตุ" className="sm:col-span-2">
-            <Input value={note} onChange={(e) => setNote(e.target.value)} />
-          </Field>
           <Field label="สถานะ">
-            <Select value={status} onChange={(e) => setStatus(e.target.value as EntryStatus)}>
-              <option value="pending">{ENTRY_STATUS_LABEL.pending}</option>
+            <Select value={status} onChange={(e) => setStatus(e.target.value as StaffEditTargetStatus)}>
               <option value="approved">{ENTRY_STATUS_LABEL.approved}</option>
               <option value="rejected">{ENTRY_STATUS_LABEL.rejected}</option>
             </Select>
@@ -831,6 +826,15 @@ function RunRow({
               <Input value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} />
             </Field>
           )}
+          <Field label="หมายเหตุแก้ไข (บังคับ)" className="sm:col-span-2">
+            <textarea
+              className={staffEditNoteAreaClass}
+              rows={2}
+              value={staffEditNote}
+              onChange={(e) => setStaffEditNote(e.target.value)}
+              placeholder="อธิบายสิ่งที่แก้ไขให้พนักงานทราบ"
+            />
+          </Field>
         </div>
         <div className="flex justify-end gap-2">
           <Button size="sm" variant="outline" onClick={() => setEditing(false)} disabled={busy}>
@@ -882,6 +886,9 @@ function RunRow({
       {run.status === "rejected" && run.rejectNote && (
         <p className="mt-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-[hsl(32_80%_34%)]">หมายเหตุ: {run.rejectNote}</p>
       )}
+      {run.staffEditNote && (
+        <p className="mt-2 rounded-md bg-primary/10 px-3 py-2 text-xs text-primary">แก้ไขโดยเจ้าหน้าที่: {run.staffEditNote}</p>
+      )}
     </div>
   );
 }
@@ -903,20 +910,22 @@ function WeightRow({
   onStatusChange: (weight: WeightEntry, status: EntryStatus, rejectNote?: string) => Promise<void>;
   onStaffEdit: (
     weight: WeightEntry,
-    patch: { weightKg: number; status: EntryStatus; rejectNote?: string },
+    patch: { weightKg: number; status: StaffEditTargetStatus; rejectNote?: string; staffEditNote: string },
   ) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [weightKg, setWeightKg] = useState(String(weight.weightKg));
-  const [status, setStatus] = useState<EntryStatus>(weight.status);
+  const [status, setStatus] = useState<StaffEditTargetStatus>(defaultStaffEditTargetStatus(weight.status));
   const [rejectNote, setRejectNote] = useState(weight.rejectNote ?? "");
+  const [staffEditNote, setStaffEditNote] = useState("");
 
   useEffect(() => {
     if (!editing) return;
     setWeightKg(String(weight.weightKg));
-    setStatus(weight.status);
+    setStatus(defaultStaffEditTargetStatus(weight.status));
     setRejectNote(weight.rejectNote ?? "");
+    setStaffEditNote("");
   }, [editing, weight]);
 
   async function act(action: () => Promise<void>) {
@@ -944,11 +953,17 @@ function WeightRow({
       window.alert("กรุณาระบุเหตุผลที่ไม่ผ่าน");
       return;
     }
+    const staffNoteErr = validateStaffEditNote(staffEditNote);
+    if (staffNoteErr) {
+      window.alert(staffNoteErr);
+      return;
+    }
     await act(async () => {
       await onStaffEdit(weight, {
         weightKg: kg,
         status,
         rejectNote: status === "rejected" ? rejectNote.trim() : undefined,
+        staffEditNote: staffEditNote.trim(),
       });
       setEditing(false);
     });
@@ -969,8 +984,7 @@ function WeightRow({
             />
           </Field>
           <Field label="สถานะ">
-            <Select value={status} onChange={(e) => setStatus(e.target.value as EntryStatus)}>
-              <option value="pending">{ENTRY_STATUS_LABEL.pending}</option>
+            <Select value={status} onChange={(e) => setStatus(e.target.value as StaffEditTargetStatus)}>
               <option value="approved">{ENTRY_STATUS_LABEL.approved}</option>
               <option value="rejected">{ENTRY_STATUS_LABEL.rejected}</option>
             </Select>
@@ -980,6 +994,15 @@ function WeightRow({
               <Input value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} />
             </Field>
           )}
+          <Field label="หมายเหตุแก้ไข (บังคับ)" className="sm:col-span-2">
+            <textarea
+              className={staffEditNoteAreaClass}
+              rows={2}
+              value={staffEditNote}
+              onChange={(e) => setStaffEditNote(e.target.value)}
+              placeholder="อธิบายสิ่งที่แก้ไขให้พนักงานทราบ"
+            />
+          </Field>
         </div>
         <div className="flex justify-end gap-2">
           <Button size="sm" variant="outline" onClick={() => setEditing(false)} disabled={busy}>
@@ -1024,6 +1047,9 @@ function WeightRow({
       </div>
       {weight.status === "rejected" && weight.rejectNote && (
         <p className="mt-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-[hsl(32_80%_34%)]">หมายเหตุ: {weight.rejectNote}</p>
+      )}
+      {weight.staffEditNote && (
+        <p className="mt-2 rounded-md bg-primary/10 px-3 py-2 text-xs text-primary">แก้ไขโดยเจ้าหน้าที่: {weight.staffEditNote}</p>
       )}
     </div>
   );

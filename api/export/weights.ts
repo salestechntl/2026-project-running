@@ -11,6 +11,7 @@ const HEADERS = [
   "weight_kg",
   "status",
   "reject_note",
+  "staff_edit_note",
   "rejected_by",
   "approved_by",
   "approved_at",

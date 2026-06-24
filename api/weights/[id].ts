@@ -4,13 +4,19 @@ import { createAdminClient, isSupabaseConfigured } from "../_lib/supabase/admin.
 import {
   canAccessEmployee,
   canApproveEntries,
-  canEditRejectedEntry,
+  canStaffEditEntry,
 } from "../_lib/team/access.js";
 import { mapWeight, type DbWeightRow } from "../_lib/entries/map.js";
 import { approvalFieldsForStatus } from "../_lib/entries/approval-fields.js";
 import { canActorApprove, canActorReject } from "../_lib/entries/status.js";
 import { expireEntryIfStale } from "../_lib/entries/expire.js";
 import { snapshotEntry } from "../_lib/storage/attachments.js";
+import {
+  isStaffEditableStatus,
+  normalizeStaffEditNote,
+  parseStaffEditTargetStatus,
+  validateStaffEditNote,
+} from "../_lib/entries/staff-edit-note.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = requireAuth(req);
@@ -70,15 +76,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!allowed) return res.status(403).json({ error: "ไม่มีสิทธิ์จัดการรายการนี้" });
 
     if (req.body?.staffEdit === true) {
-      if (!canEditRejectedEntry(auth)) {
-        return res.status(403).json({ error: "เฉพาะ Admin / Super Admin เท่านั้น" });
+      if (!canStaffEditEntry(auth)) {
+        return res.status(403).json({ error: "เฉพาะ Checker / Super Admin เท่านั้น" });
       }
-      if (row.status !== "rejected") {
-        return res.status(400).json({ error: "แก้ไขได้เฉพาะรายการที่ไม่ผ่าน" });
+      if (!isStaffEditableStatus(row.status)) {
+        return res.status(400).json({ error: "แก้ไขได้เฉพาะรายการที่อนุมัติแล้ว ไม่ผ่าน หรือหมดอายุ" });
       }
 
-      const nextStatus = req.body?.status;
-      if (nextStatus !== "pending" && nextStatus !== "approved" && nextStatus !== "rejected") {
+      const nextStatus = parseStaffEditTargetStatus(req.body?.status);
+      if (!nextStatus) {
         return res.status(400).json({ error: "สถานะไม่ถูกต้อง" });
       }
 
@@ -95,12 +101,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
-      await snapshotEntry(supabase, "weight", id, row as unknown as Record<string, unknown>, auth.sub, "staff_edit");
+      const staffEditNoteErr = validateStaffEditNote(req.body?.staffEditNote ?? req.body?.staff_edit_note);
+      if (staffEditNoteErr) {
+        return res.status(400).json({ error: staffEditNoteErr });
+      }
+      const staffEditNote = normalizeStaffEditNote(String(req.body?.staffEditNote ?? req.body?.staff_edit_note));
+
+      await snapshotEntry(supabase, "weight", id, row as unknown as Record<string, unknown>, auth.sub, staffEditNote);
 
       const { data: updated, error: updateError } = await supabase
         .from("weight_entries")
         .update({
           weight_kg: weightKg,
+          staff_edit_note: staffEditNote,
           ...approvalFieldsForStatus(nextStatus, auth.sub, { rejectNote }),
         })
         .eq("id", id)
@@ -117,7 +130,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         action: "weight.staff_edit",
         target_type: "weight",
         target_id: id,
-        metadata: { status: nextStatus },
+        metadata: { status: nextStatus, staff_edit_note: staffEditNote },
       });
 
       return res.status(200).json({ weight: mapWeight(updated as DbWeightRow) });
@@ -139,7 +152,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (status === "approved") {
       if (!canActorApprove(activeRow.status, auth)) {
         if (activeRow.status === "expired") {
-          return res.status(403).json({ error: "เฉพาะ Admin / Super Admin เท่านั้นที่อนุมัติรายการหมดอายุได้" });
+          return res.status(403).json({ error: "เฉพาะ Checker / Super Admin เท่านั้นที่อนุมัติรายการหมดอายุได้" });
         }
         return res.status(400).json({ error: "อนุมัติได้เฉพาะรายการที่รออนุมัติ" });
       }
@@ -176,7 +189,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!canActorReject(activeRow.status, auth)) {
       if (activeRow.status === "expired") {
-        return res.status(403).json({ error: "เฉพาะ Admin / Super Admin เท่านั้นที่ไม่อนุมัติรายการหมดอายุได้" });
+        return res.status(403).json({ error: "เฉพาะ Checker / Super Admin เท่านั้นที่ไม่อนุมัติรายการหมดอายุได้" });
       }
       return res.status(400).json({ error: "ไม่สามารถปฏิเสธรายการนี้ได้" });
     }

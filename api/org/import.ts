@@ -112,7 +112,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .select("employee_id, role, password_hash");
     const roleById = new Map(
       (existingEmployees ?? [])
-        .filter((r) => r.role === "super_admin" || r.role === "admin")
+        .filter((r) => r.role === "super_admin" || r.role === "checker" || r.role === "admin")
         .map((r) => [r.employee_id as string, r.role as string]),
     );
     const passwordById = new Map(
@@ -140,7 +140,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: "บันทึกข้อมูลพนักงานไม่สำเร็จ" });
     }
 
-    // Deactivate employees not in file (never deactivate super_admin or admin)
+    // Deactivate employees not in file (never deactivate super_admin or checker)
     if (toDeactivate.length > 0) {
       const protectedIds = new Set(roleById.keys());
       const deactivateIds = toDeactivate.filter((id) => !protectedIds.has(id));

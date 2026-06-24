@@ -1,4 +1,5 @@
 import type { DbRole } from "../auth/types.js";
+import { isCheckerRole } from "../auth/roles.js";
 
 export type EntryStatus = "pending" | "approved" | "rejected" | "expired";
 
@@ -25,11 +26,11 @@ export function canLeadReject(status: EntryStatus): boolean {
   return status === "pending" || status === "approved";
 }
 
-function isOrgWideRole(role: DbRole): boolean {
-  return role === "admin" || role === "super_admin";
+function isOrgWideRole(role: DbRole | string): boolean {
+  return isCheckerRole(role) || role === "super_admin";
 }
 
-/** อนุมัติได้ตามบทบาท — expired เฉพาะ admin / super_admin */
+/** อนุมัติได้ตามบทบาท — expired เฉพาะ checker / super_admin */
 export function canActorApprove(
   status: EntryStatus,
   actor: { isLead: boolean; role: DbRole },
@@ -39,7 +40,7 @@ export function canActorApprove(
   return false;
 }
 
-/** ไม่ผ่านได้ตามบทบาท — expired เฉพาะ admin / super_admin */
+/** ไม่ผ่านได้ตามบทบาท — expired เฉพาะ checker / super_admin */
 export function canActorReject(
   status: EntryStatus,
   actor: { isLead: boolean; role: DbRole },

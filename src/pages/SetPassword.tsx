@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Footprints, ArrowRight, IdCard, Lock, KeyRound } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { APP_VERSION } from "@/lib/version";
-import { passwordsMatch, validatePassword } from "@/lib/password";
+import { passwordsMatch, validatePassword, PASSWORD_FORMAT_HINT } from "@/lib/password";
 import { Button, Field, Input } from "@/components/ui";
 
 export default function SetPassword() {
@@ -13,7 +13,9 @@ export default function SetPassword() {
   const [employeeId, setEmployeeId] = useState(searchParams.get("employee_id") ?? "");
   const [password, setPasswordValue] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState<string>();
+  const [employeeError, setEmployeeError] = useState<string>();
+  const [passwordError, setPasswordError] = useState<string>();
+  const [confirmError, setConfirmError] = useState<string>();
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -28,23 +30,25 @@ export default function SetPassword() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setError(undefined);
+    setEmployeeError(undefined);
+    setPasswordError(undefined);
+    setConfirmError(undefined);
 
     const id = employeeId.trim();
     if (!id) {
-      setError("กรุณากรอกรหัสพนักงาน");
+      setEmployeeError("กรุณากรอกรหัสพนักงาน");
       return;
     }
 
-    const passwordError = validatePassword(password);
-    if (passwordError) {
-      setError(passwordError);
+    const pwError = validatePassword(password);
+    if (pwError) {
+      setPasswordError(pwError);
       return;
     }
 
     const matchError = passwordsMatch(password, confirm);
     if (matchError) {
-      setError(matchError);
+      setConfirmError(matchError);
       return;
     }
 
@@ -53,7 +57,7 @@ export default function SetPassword() {
     setLoading(false);
 
     if (!res.ok) {
-      setError(res.error);
+      setPasswordError(res.error);
       return;
     }
 
@@ -87,7 +91,7 @@ export default function SetPassword() {
               </p>
 
               <form onSubmit={submit} className="mt-7 space-y-5" noValidate>
-                <Field label="รหัสพนักงาน" required htmlFor="emp" error={error && !password ? error : undefined}>
+                <Field label="รหัสพนักงาน" required htmlFor="emp" error={employeeError}>
                   <div className="relative">
                     <IdCard className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -100,13 +104,19 @@ export default function SetPassword() {
                       value={employeeId}
                       onChange={(e) => {
                         setEmployeeId(e.target.value);
-                        if (error) setError(undefined);
+                        if (employeeError) setEmployeeError(undefined);
                       }}
                     />
                   </div>
                 </Field>
 
-                <Field label="รหัสผ่าน" required htmlFor="password" hint="4–30 ตัวอักษร">
+                <Field
+                  label="รหัสผ่าน"
+                  required
+                  htmlFor="password"
+                  hint={PASSWORD_FORMAT_HINT}
+                  error={passwordError}
+                >
                   <div className="relative">
                     <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -118,13 +128,13 @@ export default function SetPassword() {
                       value={password}
                       onChange={(e) => {
                         setPasswordValue(e.target.value);
-                        if (error) setError(undefined);
+                        if (passwordError) setPasswordError(undefined);
                       }}
                     />
                   </div>
                 </Field>
 
-                <Field label="ยืนยันรหัสผ่าน" required htmlFor="confirm">
+                <Field label="ยืนยันรหัสผ่าน" required htmlFor="confirm" error={confirmError}>
                   <div className="relative">
                     <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -136,13 +146,10 @@ export default function SetPassword() {
                       value={confirm}
                       onChange={(e) => {
                         setConfirm(e.target.value);
-                        if (error) setError(undefined);
+                        if (confirmError) setConfirmError(undefined);
                       }}
                     />
                   </div>
-                  {error && (password || confirm) && (
-                    <p className="mt-1.5 text-sm text-danger">{error}</p>
-                  )}
                 </Field>
 
                 <Button type="submit" size="lg" className="w-full" disabled={loading}>

@@ -3,6 +3,7 @@ import { createAdminClient, isSupabaseConfigured } from "../_lib/supabase/admin.
 import { signToken } from "../_lib/auth/jwt.js";
 import { hashPassword, validatePassword, verifyPassword } from "../_lib/auth/password.js";
 import type { AuthUser, DbEmployee, LoginResponse } from "../_lib/auth/types.js";
+import { isCheckerRole, normalizeDbRole } from "../_lib/auth/roles.js";
 
 const LOGIN_FAILED_MSG = "รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง";
 
@@ -29,8 +30,9 @@ async function issueLogin(
     .eq("is_active", true);
 
   const isLead = (count ?? 0) > 0;
-  const isAdmin = emp.role === "admin";
+  const isChecker = isCheckerRole(emp.role);
   const isSuperAdmin = emp.role === "super_admin";
+  const role = normalizeDbRole(emp.role);
 
   const token = signToken({
     sub: emp.employee_id,
@@ -38,7 +40,7 @@ async function issueLogin(
     position: emp.position,
     department: emp.department,
     managerId: emp.manager_id,
-    role: emp.role,
+    role,
     isLead,
   });
 
@@ -47,15 +49,15 @@ async function issueLogin(
     action: "auth.login",
     target_type: "employee",
     target_id: emp.employee_id,
-    metadata: { is_lead: isLead, is_admin: isAdmin, is_super_admin: isSuperAdmin },
+    metadata: { is_lead: isLead, is_checker: isChecker, is_super_admin: isSuperAdmin },
   });
   if (auditError) console.error("audit_log insert error:", auditError);
 
   const body: LoginResponse = {
     token,
-    user: toAuthUser(emp),
+    user: toAuthUser({ ...emp, role }),
     isLead,
-    isAdmin,
+    isChecker,
     isSuperAdmin,
   };
 

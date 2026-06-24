@@ -15,6 +15,7 @@ export interface DbRunRow {
   note: string | null;
   status: EntryStatus;
   reject_note: string | null;
+  staff_edit_note: string | null;
   strava_images: string[] | null;
   created_at: string;
   updated_at: string;
@@ -28,6 +29,7 @@ export interface DbWeightRow {
   weight_kg: number;
   status: EntryStatus;
   reject_note: string | null;
+  staff_edit_note: string | null;
   proof_image: string | null;
   created_at: string;
   updated_at: string;
@@ -47,6 +49,7 @@ export interface RunEntryDto {
   note?: string;
   status: EntryStatus;
   rejectNote?: string;
+  staffEditNote?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -61,6 +64,7 @@ export interface WeightEntryDto {
   proofImageRef?: string;
   status: EntryStatus;
   rejectNote?: string;
+  staffEditNote?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -86,6 +90,7 @@ export function mapRun(row: DbRunRow, images?: { urls: string[]; refs: string[] 
     note: row.note ?? undefined,
     status: row.status,
     rejectNote: row.reject_note ?? undefined,
+    staffEditNote: row.staff_edit_note ?? undefined,
     createdAt: ts(row.created_at),
     updatedAt: ts(row.updated_at),
   };
@@ -103,6 +108,7 @@ export function mapWeight(row: DbWeightRow, image?: { url: string; ref: string }
     proofImageRef: image?.ref,
     status: row.status,
     rejectNote: row.reject_note ?? undefined,
+    staffEditNote: row.staff_edit_note ?? undefined,
     createdAt: ts(row.created_at),
     updatedAt: ts(row.updated_at),
   };

@@ -47,3 +47,27 @@ comment on column public.employees.password_hash is 'bcrypt hash; null = user mu
 -- where employee_id = 'YOUR_SUPER_ADMIN_ID'
 --   and role = 'super_admin'
 --   and password_hash is null;
+
+-- -----------------------------------------------------------------------------
+-- 008 — staff edit note (visible to employees)
+-- -----------------------------------------------------------------------------
+alter table public.run_entries
+  add column if not exists staff_edit_note text;
+
+alter table public.weight_entries
+  add column if not exists staff_edit_note text;
+
+comment on column public.run_entries.staff_edit_note is 'Admin note when correcting a rejected entry; shown to employee';
+comment on column public.weight_entries.staff_edit_note is 'Checker note when correcting a rejected entry; shown to employee';
+
+-- -----------------------------------------------------------------------------
+-- 009 — rename role admin → checker (same permissions)
+-- -----------------------------------------------------------------------------
+update public.employees
+  set role = 'checker'
+  where role = 'admin';
+
+alter table public.employees drop constraint if exists employees_role_check;
+alter table public.employees
+  add constraint employees_role_check
+  check (role in ('employee', 'checker', 'super_admin'));

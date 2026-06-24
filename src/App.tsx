@@ -16,8 +16,8 @@ import SuperAdmin from "@/pages/SuperAdmin";
 import Export from "@/pages/Export";
 import EmployeeAdmin from "@/pages/EmployeeAdmin";
 
-function canManageTeam(isLead: boolean, isAdmin: boolean, isSuperAdmin: boolean): boolean {
-  return isLead || isAdmin || isSuperAdmin;
+function canManageTeam(isLead: boolean, isChecker: boolean, isSuperAdmin: boolean): boolean {
+  return isLead || isChecker || isSuperAdmin;
 }
 
 /** จำนวนรายการรออนุมัติของทีม สำหรับ badge บนเมนู "ข้อมูลทีม" */
@@ -53,7 +53,7 @@ function usePendingTeamCount(userId: string | undefined, canManage: boolean): nu
 }
 
 function ProtectedLayout() {
-  const { user, isLead, isAdmin, isSuperAdmin, loading } = useAuth();
+  const { user, isLead, isChecker, isSuperAdmin, loading } = useAuth();
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
@@ -63,7 +63,7 @@ function ProtectedLayout() {
   }
   if (!user) return <Navigate to="/" replace />;
 
-  const manageTeam = canManageTeam(isLead, isAdmin, isSuperAdmin);
+  const manageTeam = canManageTeam(isLead, isChecker, isSuperAdmin);
   const teamPending = usePendingTeamCount(user.id, manageTeam);
   const rejectedCount = useRejectedEntryCount(user.id);
 
@@ -103,8 +103,8 @@ function SuperAdminOnly({ children }: { children: React.ReactNode }) {
 }
 
 function TeamManagerOnly({ children }: { children: React.ReactNode }) {
-  const { isLead, isAdmin, isSuperAdmin } = useAuth();
-  if (!canManageTeam(isLead, isAdmin, isSuperAdmin)) return <Navigate to="/app" replace />;
+  const { isLead, isChecker, isSuperAdmin } = useAuth();
+  if (!canManageTeam(isLead, isChecker, isSuperAdmin)) return <Navigate to="/app" replace />;
   return <>{children}</>;
 }
 

@@ -190,10 +190,10 @@ export async function apiStaffEditRun(
     runType: RunEntry["runType"];
     distanceKm: number;
     durationSec: number;
-    note?: string;
     missionMonth?: string;
-    status: EntryStatus;
+    status: "approved" | "rejected";
     rejectNote?: string;
+    staffEditNote: string;
   },
 ): Promise<RunEntry> {
   const res = await fetch(`/api/runs/${encodeURIComponent(id)}`, {
@@ -205,10 +205,10 @@ export async function apiStaffEditRun(
       runType: body.runType,
       distanceKm: body.distanceKm,
       durationSec: body.durationSec,
-      note: body.note,
       missionMonth: body.missionMonth,
       status: body.status,
       rejectNote: body.rejectNote,
+      staffEditNote: body.staffEditNote,
     }),
   });
   if (!res.ok) throw new Error(await parseError(res));
@@ -256,8 +256,9 @@ export async function apiStaffEditWeight(
   id: string,
   body: {
     weightKg: number;
-    status: EntryStatus;
+    status: "approved" | "rejected";
     rejectNote?: string;
+    staffEditNote: string;
   },
 ): Promise<WeightEntry> {
   const res = await fetch(`/api/weights/${encodeURIComponent(id)}`, {
@@ -268,6 +269,7 @@ export async function apiStaffEditWeight(
       weightKg: body.weightKg,
       status: body.status,
       rejectNote: body.rejectNote,
+      staffEditNote: body.staffEditNote,
     }),
   });
   if (!res.ok) throw new Error(await parseError(res));
