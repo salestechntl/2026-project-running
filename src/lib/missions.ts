@@ -9,6 +9,9 @@
  */
 
 import { formatThaiDate } from "./utils";
+import { currentMonthKey, todayISOEffective } from "./effective-date";
+
+export { currentMonthKey, todayISOEffective };
 
 export interface MonthlyMission {
   month: string; // "yyyy-mm"
@@ -29,33 +32,8 @@ export const MONTHLY_MISSIONS: MonthlyMission[] = [
   },
 ];
 
-/**
- * โหมดสาธิต: บังคับ "เดือนปัจจุบัน" เพื่อพรีวิวการปลดล็อกภารกิจ
- * โปรดตั้งค่าเป็น "" ก่อนใช้งานจริง เพื่อให้ระบบอ้างอิงวันที่จริงของเครื่อง
- */
-export const SIMULATED_CURRENT_MONTH: string = "";
-
 function pad2(n: number): string {
   return n.toString().padStart(2, "0");
-}
-
-/** คีย์เดือนปัจจุบัน "yyyy-mm" (เคารพโหมดสาธิต) */
-export function currentMonthKey(): string {
-  if (SIMULATED_CURRENT_MONTH) return SIMULATED_CURRENT_MONTH;
-  const d = new Date();
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
-}
-
-/** ISO ของ "วันนี้" สำหรับ default/max ของช่องวันที่ (เคารพโหมดสาธิต) */
-export function todayISOEffective(): string {
-  if (SIMULATED_CURRENT_MONTH) {
-    const [y, m] = SIMULATED_CURRENT_MONTH.split("-").map(Number);
-    const lastDay = new Date(y, m, 0).getDate();
-    return `${SIMULATED_CURRENT_MONTH}-${pad2(lastDay)}`;
-  }
-  const d = new Date();
-  const tz = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - tz).toISOString().slice(0, 10);
 }
 
 export function monthOf(iso: string): string {
@@ -153,7 +131,7 @@ export function startWeightTargetMonth(): string {
 /**
  * เดือนเป้าหมายสำหรับน้ำหนักสิ้นเดือน
  * - วันสุดท้ายของเดือน M     → M
- * - วันที่ 1 ของเดือน M+1    → M (เดือนก่อนหน้า)
+ * - วันที่ 1–2 ของเดือน M+1  → M (เดือนก่อนหน้า)
  * - วันอื่นในเดือนปัจจุบัน   → เดือนปัจจุบัน (รอบถัดไปที่จะเปิดรับ)
  */
 export function endWeightTargetMonth(today = todayISOEffective()): string {
@@ -164,18 +142,21 @@ export function endWeightTargetMonth(today = todayISOEffective()): string {
   const lastDayISO = `${cur}-${pad2(lastDay)}`;
 
   if (today === lastDayISO) return cur;
-  if (day === 1) return monthKeyOffset(cur, -1);
+  if (day === 1 || day === 2) return monthKeyOffset(cur, -1);
   return cur;
 }
 
+/** วันที่ 1–2 ของเดือนถัดไป — ช่วงกรอกสิ้นเดือนย้อนหลัง */
+export const END_WEIGHT_NEXT_MONTH_GRACE_DAYS = 2;
+
 function endWeightClosesISO(month: string): string {
-  return `${monthKeyOffset(month, 1)}-01`;
+  return `${monthKeyOffset(month, 1)}-${pad2(END_WEIGHT_NEXT_MONTH_GRACE_DAYS)}`;
 }
 
 /**
  * หน้าต่างเวลาสำหรับกรอกน้ำหนัก
  * - ต้นเดือน (start): บันทึก/แก้ไข pending/ส่งใหม่ — เฉพาะวันที่ 1 ของเดือน
- * - สิ้นเดือน (end):   วันสุดท้ายของเดือน → วันที่ 1 เดือนถัดไป (2 วัน)
+ * - สิ้นเดือน (end):   วันสุดท้ายของเดือน → วันที่ 2 เดือนถัดไป (3 วัน)
  */
 export function weightCanCreate(month: string, period: "start" | "end"): boolean {
   return weightWindow(month, period).canCreate;

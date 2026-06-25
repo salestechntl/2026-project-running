@@ -24,6 +24,11 @@ const ROLE_LABEL = { employee: "พนักงาน", checker: "Checker", supe
 
 type ActiveFilter = "all" | "active" | "inactive";
 type RoleFilter = "all" | "employee" | "checker" | "super_admin";
+type PasswordEditAction = "unchanged" | "set" | "clear";
+
+function passwordStatusLabel(hasPassword: boolean): string {
+  return hasPassword ? "ตั้งแล้ว" : "ยังไม่ตั้ง";
+}
 
 function toForm(row: EmployeeRecord): EmployeeFormState {
   return {
@@ -37,7 +42,11 @@ function toForm(row: EmployeeRecord): EmployeeFormState {
   };
 }
 
-function diffLines(before: EmployeeFormState, after: EmployeeFormState): string[] {
+function diffLines(
+  before: EmployeeFormState,
+  after: EmployeeFormState,
+  password?: { action: PasswordEditAction; hadPassword: boolean },
+): string[] {
   const lines: string[] = [];
   if (before.name !== after.name) lines.push(`ชื่อ: ${before.name} → ${after.name}`);
   if (before.position !== after.position) lines.push(`ตำแหน่ง: ${before.position || "—"} → ${after.position || "—"}`);
@@ -48,6 +57,11 @@ function diffLines(before: EmployeeFormState, after: EmployeeFormState): string[
   if (before.role !== after.role) lines.push(`บทบาท: ${ROLE_LABEL[before.role]} → ${ROLE_LABEL[after.role]}`);
   if (before.isActive !== after.isActive) {
     lines.push(`สถานะ: ${before.isActive ? "ใช้งาน" : "ไม่ใช้งาน"} → ${after.isActive ? "ใช้งาน" : "ไม่ใช้งาน"}`);
+  }
+  if (password?.action === "set") {
+    lines.push(`รหัสผ่าน: ${passwordStatusLabel(password.hadPassword)} → ตั้งรหัสผ่านใหม่`);
+  } else if (password?.action === "clear" && password.hadPassword) {
+    lines.push(`รหัสผ่าน: ตั้งแล้ว → ยังไม่ตั้ง`);
   }
   return lines;
 }
@@ -73,6 +87,12 @@ export default function EmployeeAdmin() {
   const [editDraft, setEditDraft] = useState<EmployeeFormState | null>(null);
   const [editOriginal, setEditOriginal] = useState<EmployeeFormState | null>(null);
   const [editErrors, setEditErrors] = useState<Partial<Record<keyof EmployeeFormState, string>>>({});
+  const [passwordAction, setPasswordAction] = useState<PasswordEditAction>("unchanged");
+  const [editHadPassword, setEditHadPassword] = useState(false);
+  const [editPassword, setEditPassword] = useState("");
+  const [editPasswordConfirm, setEditPasswordConfirm] = useState("");
+  const [editPasswordError, setEditPasswordError] = useState<string>();
+  const [editPasswordConfirmError, setEditPasswordConfirmError] = useState<string>();
   const [confirmSave, setConfirmSave] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
 
@@ -134,12 +154,22 @@ export default function EmployeeAdmin() {
     void load();
   }, [load]);
 
+  function resetPasswordEdit(hadPassword: boolean) {
+    setPasswordAction("unchanged");
+    setEditHadPassword(hadPassword);
+    setEditPassword("");
+    setEditPasswordConfirm("");
+    setEditPasswordError(undefined);
+    setEditPasswordConfirmError(undefined);
+  }
+
   function startEdit(row: EmployeeRecord) {
     const form = toForm(row);
     setEditingId(row.employeeId);
     setEditDraft(form);
     setEditOriginal(form);
     setEditErrors({});
+    resetPasswordEdit(row.hasPassword);
   }
 
   function cancelEdit() {
@@ -147,6 +177,7 @@ export default function EmployeeAdmin() {
     setEditDraft(null);
     setEditOriginal(null);
     setEditErrors({});
+    resetPasswordEdit(false);
     setConfirmSave(false);
   }
 
@@ -160,7 +191,30 @@ export default function EmployeeAdmin() {
       originalId: editingId,
     });
     setEditErrors(errorsByField(errs));
+    setEditPasswordError(undefined);
+    setEditPasswordConfirmError(undefined);
+
+    if (passwordAction === "set") {
+      const passwordError = validatePassword(editPassword);
+      if (passwordError) {
+        setEditPasswordError(passwordError);
+      }
+      const matchError = passwordsMatch(editPassword, editPasswordConfirm);
+      if (matchError) {
+        setEditPasswordConfirmError(matchError);
+      }
+      if (passwordError || matchError) return;
+    }
+
     if (errs.length > 0) return;
+
+    const profileChanged = diffLines(editOriginal, editDraft).length > 0;
+    const passwordChanged = passwordAction !== "unchanged";
+    if (!profileChanged && !passwordChanged) {
+      flash("ไม่มีการเปลี่ยนแปลง");
+      return;
+    }
+
     setConfirmSave(true);
   }
 
@@ -175,6 +229,8 @@ export default function EmployeeAdmin() {
         managerId: editDraft.managerId?.trim() || null,
         role: editDraft.role,
         isActive: editDraft.isActive,
+        ...(passwordAction === "set" ? { resetPassword: editPassword } : {}),
+        ...(passwordAction === "clear" ? { clearPassword: true } : {}),
       });
       flash("บันทึกการแก้ไขเรียบร้อยแล้ว");
       cancelEdit();
@@ -465,10 +521,70 @@ export default function EmployeeAdmin() {
                             </Badge>
                           )}
                         </td>
-                        <td className="px-3 py-2">
-                          <Badge tone={row.hasPassword ? "success" : "neutral"}>
-                            {row.hasPassword ? "ตั้งแล้ว" : "ยังไม่ตั้ง"}
-                          </Badge>
+                        <td className="px-3 py-2 align-top">
+                          {editing ? (
+                            <div className="min-w-[11rem] space-y-2">
+                              <Select
+                                value={passwordAction}
+                                onChange={(e) => {
+                                  const action = e.target.value as PasswordEditAction;
+                                  setPasswordAction(action);
+                                  setEditPassword("");
+                                  setEditPasswordConfirm("");
+                                  setEditPasswordError(undefined);
+                                  setEditPasswordConfirmError(undefined);
+                                }}
+                                className="h-9 text-xs"
+                              >
+                                <option value="unchanged">
+                                  ไม่เปลี่ยน ({passwordStatusLabel(editHadPassword)})
+                                </option>
+                                <option value="set">ตั้งรหัสผ่านใหม่</option>
+                                {editHadPassword && <option value="clear">รีเซ็ตเป็น «ยังไม่ตั้ง»</option>}
+                              </Select>
+                              {passwordAction === "set" && (
+                                <div className="space-y-2">
+                                  <PasswordInput
+                                    autoComplete="new-password"
+                                    placeholder="รหัสผ่านใหม่"
+                                    value={editPassword}
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      setEditPassword(value);
+                                      setEditPasswordError(validatePasswordCharacters(value) ?? undefined);
+                                    }}
+                                    className="h-9 text-xs"
+                                  />
+                                  {editPasswordError && (
+                                    <p className="text-xs text-danger">{editPasswordError}</p>
+                                  )}
+                                  <PasswordInput
+                                    autoComplete="new-password"
+                                    placeholder="ยืนยันรหัสผ่าน"
+                                    value={editPasswordConfirm}
+                                    onChange={(e) => {
+                                      setEditPasswordConfirm(e.target.value);
+                                      if (editPasswordConfirmError) setEditPasswordConfirmError(undefined);
+                                    }}
+                                    className="h-9 text-xs"
+                                  />
+                                  {editPasswordConfirmError && (
+                                    <p className="text-xs text-danger">{editPasswordConfirmError}</p>
+                                  )}
+                                  <p className="text-[11px] text-muted-foreground">{PASSWORD_FORMAT_HINT}</p>
+                                </div>
+                              )}
+                              {passwordAction === "clear" && (
+                                <p className="text-[11px] leading-snug text-[hsl(32_80%_34%)]">
+                                  พนักงานจะต้องสร้างรหัสผ่านใหม่เมื่อเข้าใช้งานครั้งถัดไป
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <Badge tone={row.hasPassword ? "success" : "neutral"}>
+                              {passwordStatusLabel(row.hasPassword)}
+                            </Badge>
+                          )}
                         </td>
                         <td className="px-3 py-2">
                           <div className="flex justify-end gap-1">
@@ -532,11 +648,21 @@ export default function EmployeeAdmin() {
         confirmLabel={editSaving ? "กำลังบันทึก…" : "ยืนยันบันทึก"}
         message={
           editDraft && editOriginal ? (
-            <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
-              {diffLines(editOriginal, editDraft).map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
+            (() => {
+              const lines = diffLines(editOriginal, editDraft, {
+                action: passwordAction,
+                hadPassword: editHadPassword,
+              });
+              return lines.length > 0 ? (
+                <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
+                  {lines.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              ) : (
+                "บันทึกการเปลี่ยนแปลงข้อมูลพนักงาน"
+              );
+            })()
           ) : (
             "บันทึกการเปลี่ยนแปลงข้อมูลพนักงาน"
           )

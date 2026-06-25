@@ -313,7 +313,7 @@ export function saveWeight(entry: WeightInput): WeightEntry {
     throw new Error(
       entry.period === "start"
         ? "ส่งน้ำหนักต้นเดือนใหม่ได้เฉพาะวันที่ 1 ของเดือน"
-        : "ส่งน้ำหนักสิ้นเดือนใหม่ได้เฉพาะวันสุดท้ายของเดือนและวันที่ 1 เดือนถัดไป",
+        : "ส่งน้ำหนักสิ้นเดือนใหม่ได้เฉพาะวันสุดท้ายของเดือนและวันที่ 1–2 เดือนถัดไป",
     );
   }
   if (!weightCanCreate(entry.month, entry.period)) {

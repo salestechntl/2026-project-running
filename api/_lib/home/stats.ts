@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { APPROVAL_TZ } from "../entries/expire.js";
+import { currentMonthKey } from "../time/effective-date.js";
 import type { DbRole } from "../auth/types.js";
 import {
   allEmployeesExcept,
@@ -19,10 +19,6 @@ export interface HomeStatsDto {
   teamCount: number;
 }
 
-export function currentMonthKeyBangkok(now = new Date()): string {
-  return now.toLocaleDateString("en-CA", { timeZone: APPROVAL_TZ }).slice(0, 7);
-}
-
 function monthOfRunDate(runDate: string): string {
   return runDate.slice(0, 7);
 }
@@ -33,7 +29,7 @@ export async function loadHomeStats(
   role: DbRole,
   manageTeam: boolean,
 ): Promise<HomeStatsDto> {
-  const monthKey = currentMonthKeyBangkok();
+  const monthKey = currentMonthKey();
 
   const { data: runs, error: runsError } = await supabase
     .from("run_entries")

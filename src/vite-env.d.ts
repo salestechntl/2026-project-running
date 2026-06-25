@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly VITE_API_PROXY?: string;
   /** หน่วง spinner ใน dev (ms) — ตั้ง 0 เพื่อปิด */
   readonly VITE_LOADING_DEMO_MS?: string;
+  /** จำลองวันที่ yyyy-mm-dd สำหรับทดสอบกฎบันทึก — อย่าใช้บน Production */
+  readonly VITE_SIMULATED_TODAY?: string;
 }
 
 interface ImportMeta {

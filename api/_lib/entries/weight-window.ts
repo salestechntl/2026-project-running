@@ -1,11 +1,11 @@
+import { todayISOEffective } from "../time/effective-date.js";
+
 function pad2(n: number): string {
   return n.toString().padStart(2, "0");
 }
 
 function todayISO(): string {
-  const d = new Date();
-  const tz = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - tz).toISOString().slice(0, 10);
+  return todayISOEffective();
 }
 
 function monthKeyOffset(monthKey: string, deltaMonths: number): string {
@@ -14,8 +14,10 @@ function monthKeyOffset(monthKey: string, deltaMonths: number): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
 }
 
+const END_WEIGHT_NEXT_MONTH_GRACE_DAYS = 2;
+
 function endWeightClosesISO(month: string): string {
-  return `${monthKeyOffset(month, 1)}-01`;
+  return `${monthKeyOffset(month, 1)}-${pad2(END_WEIGHT_NEXT_MONTH_GRACE_DAYS)}`;
 }
 
 export function weightWindow(month: string, period: "start" | "end"): {
@@ -71,5 +73,5 @@ export function assertWeightCanResubmit(
   if (weightWindow(month, period).open) return null;
   return period === "start"
     ? "ส่งน้ำหนักต้นเดือนใหม่ได้เฉพาะวันที่ 1 ของเดือน"
-    : "ส่งน้ำหนักสิ้นเดือนใหม่ได้เฉพาะวันสุดท้ายของเดือนและวันที่ 1 เดือนถัดไป";
+    : "ส่งน้ำหนักสิ้นเดือนใหม่ได้เฉพาะวันสุดท้ายของเดือนและวันที่ 1–2 เดือนถัดไป";
 }

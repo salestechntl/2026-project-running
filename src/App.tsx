@@ -6,6 +6,7 @@ import { countPendingForTeam, DATA_CHANGED_EVENT } from "@/lib/entries";
 import { useSubordinates } from "@/lib/hooks/useTeam";
 import { useRejectedEntryCount } from "@/lib/hooks/useEntries";
 import { AppShell, type NavItem } from "@/components/AppShell";
+import { SimulatedDateBanner } from "@/components/SimulatedDateBanner";
 import Login from "@/pages/Login";
 import SetPassword from "@/pages/SetPassword";
 import ChangePassword from "@/pages/ChangePassword";
@@ -112,6 +113,7 @@ function TeamManagerOnly({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <AuthProvider>
+      <SimulatedDateBanner />
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/set-password" element={<SetPassword />} />

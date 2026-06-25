@@ -380,9 +380,14 @@ export async function apiCreateEmployee(
   return data.employee;
 }
 
+export type EmployeeUpdatePatch = Omit<EmployeeRecord, "employeeId" | "createdAt" | "updatedAt" | "hasPassword"> & {
+  resetPassword?: string;
+  clearPassword?: boolean;
+};
+
 export async function apiUpdateEmployee(
   employeeId: string,
-  patch: Omit<EmployeeRecord, "employeeId" | "createdAt" | "updatedAt" | "hasPassword">,
+  patch: EmployeeUpdatePatch,
 ): Promise<EmployeeRecord> {
   const res = await fetch("/api/employees", {
     method: "PATCH",

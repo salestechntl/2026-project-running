@@ -113,7 +113,7 @@ export default function Home() {
                 </li>
                 <li className="flex items-start gap-1.5 text-xs text-muted-foreground">
                   <Calendar className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-                  กรอกน้ำหนักสิ้นเดือนได้วันสุดท้ายของเดือนและวันที่ 1 เดือนถัดไป
+                  กรอกน้ำหนักสิ้นเดือนได้วันสุดท้ายของเดือนและวันที่ 1–2 เดือนถัดไป
                 </li>
               </ul>
             </div>

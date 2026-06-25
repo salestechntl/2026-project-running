@@ -2,6 +2,7 @@ import { type ComponentType, type ReactNode } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { LogOut, Footprints } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { isSimulatedTodayActive, SIMULATED_BANNER_TOP_OFFSET_CLASS } from "@/lib/effective-date";
 import { cn } from "@/lib/utils";
 
 export interface NavItem {
@@ -51,7 +52,12 @@ export function AppShell({ children, nav }: { children: ReactNode; nav?: NavItem
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <header className="sticky top-0 z-40 border-b border-border/70 bg-card/95 shadow-sm backdrop-blur-md">
+      <header
+        className={cn(
+          "sticky z-40 border-b border-border/70 bg-card/95 shadow-sm backdrop-blur-md",
+          isSimulatedTodayActive() ? SIMULATED_BANNER_TOP_OFFSET_CLASS : "top-0",
+        )}
+      >
         <div className="container flex h-16 items-center justify-between gap-4">
           <Brand />
 

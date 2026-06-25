@@ -98,47 +98,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: "กรุณาระบุรหัสพนักงาน" });
       }
 
-      const resetPassword = body.resetPassword ?? body.reset_password;
-      if (resetPassword !== undefined) {
-        const password = String(resetPassword);
-        const passwordError = validatePassword(password);
-        if (passwordError) {
-          return res.status(400).json({ error: passwordError });
-        }
-
-        const { data: existing, error: fetchError } = await supabase
-          .from("employees")
-          .select("*")
-          .eq("employee_id", originalId)
-          .maybeSingle();
-
-        if (fetchError || !existing) {
-          return res.status(404).json({ error: "ไม่พบพนักงาน" });
-        }
-
-        const passwordHash = await hashPassword(password);
-        const { data: updated, error: updateError } = await supabase
-          .from("employees")
-          .update({ password_hash: passwordHash })
-          .eq("employee_id", originalId)
-          .select("*")
-          .single();
-
-        if (updateError) {
-          console.error("employee password reset error:", updateError);
-          return res.status(500).json({ error: "ไม่สามารถรีเซ็ตรหัสผ่านได้" });
-        }
-
-        await supabase.from("audit_log").insert({
-          actor_id: admin.sub,
-          action: "auth.reset_password",
-          target_type: "employee",
-          target_id: originalId,
-        });
-
-        return res.status(200).json({ employee: mapEmployee(updated as DbEmployeeRow) });
-      }
-
       const { data: existing, error: fetchError } = await supabase
         .from("employees")
         .select("*")
@@ -150,6 +109,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const current = existing as DbEmployeeRow;
+      const resetPassword = body.resetPassword ?? body.reset_password;
+      const clearPassword = body.clearPassword === true || body.clear_password === true;
+
+      if (clearPassword && resetPassword !== undefined) {
+        return res.status(400).json({ error: "เลือกได้เพียงอย่างใดอย่างหนึ่ง — ตั้งรหัสผ่านใหม่หรือรีเซ็ตเป็นยังไม่ตั้ง" });
+      }
+
       const input = normalizeEmployeeInput({
         employeeId: originalId,
         name: body.name ?? current.name,
@@ -171,9 +137,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: fieldErrorsToMessage(errors), fields: errors });
       }
 
+      const dbUpdate: Record<string, unknown> = { ...toDbPayload(input) };
+
+      if (clearPassword) {
+        dbUpdate.password_hash = null;
+      } else if (resetPassword !== undefined) {
+        const password = String(resetPassword);
+        const passwordError = validatePassword(password);
+        if (passwordError) {
+          return res.status(400).json({ error: passwordError });
+        }
+        dbUpdate.password_hash = await hashPassword(password);
+      }
+
       const { data: updated, error: updateError } = await supabase
         .from("employees")
-        .update(toDbPayload(input))
+        .update(dbUpdate)
         .eq("employee_id", originalId)
         .select("*")
         .single();
@@ -189,6 +168,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         target_type: "employee",
         target_id: originalId,
       });
+
+      if (clearPassword) {
+        await supabase.from("audit_log").insert({
+          actor_id: admin.sub,
+          action: "auth.clear_password",
+          target_type: "employee",
+          target_id: originalId,
+        });
+      } else if (resetPassword !== undefined) {
+        await supabase.from("audit_log").insert({
+          actor_id: admin.sub,
+          action: "auth.reset_password",
+          target_type: "employee",
+          target_id: originalId,
+        });
+      }
 
       return res.status(200).json({ employee: mapEmployee(updated as DbEmployeeRow) });
     }

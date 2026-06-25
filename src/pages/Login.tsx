@@ -3,12 +3,14 @@ import { Link, useNavigate } from "react-router-dom";
 import { Footprints, ArrowRight, IdCard, Lock } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { normalizeEmployeeId } from "@/lib/employee-id";
+import { getSimulatedTodayISO } from "@/lib/effective-date";
 import { APP_VERSION } from "@/lib/version";
 import { Button, Field, Input, PasswordInput } from "@/components/ui";
 
 export default function Login() {
   const { login, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const simulatedDate = getSimulatedTodayISO();
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string>();
@@ -94,6 +96,15 @@ export default function Login() {
           <p className="mt-1.5 text-sm text-muted-foreground">
             ใช้รหัสพนักงานและรหัสผ่านของคุณเพื่อเริ่มบันทึกกิจกรรม
           </p>
+
+          {simulatedDate && (
+            <p
+              role="status"
+              className="mt-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-center text-xs font-medium tabular-nums text-[hsl(32_80%_34%)]"
+            >
+              simulated date = {simulatedDate}
+            </p>
+          )}
 
           <form onSubmit={submit} className="mt-7 space-y-5" noValidate>
             <Field label="รหัสพนักงาน" required htmlFor="emp">

@@ -258,6 +258,68 @@ export function ConfirmDialog({
   );
 }
 
+/* ---------------- AlertDialog ---------------- */
+export function AlertDialog({
+  open,
+  title = "แจ้งเตือน",
+  message,
+  confirmLabel = "ตกลง",
+  tone = "danger",
+  onClose,
+}: {
+  open: boolean;
+  title?: string;
+  message: ReactNode;
+  confirmLabel?: string;
+  tone?: "danger" | "warning" | "primary";
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" || e.key === "Enter") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      role="alertdialog"
+      aria-modal="true"
+      aria-label={title}
+    >
+      <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm animate-fade-up" onClick={onClose} />
+      <div className="relative w-full max-w-sm animate-scale-in rounded-2xl border border-border bg-card p-6 shadow-xl">
+        <div className="flex items-start gap-3.5">
+          <span
+            className={cn(
+              "flex h-11 w-11 shrink-0 items-center justify-center rounded-full",
+              tone === "danger" && "bg-danger/10 text-danger",
+              tone === "warning" && "bg-warning/15 text-[hsl(32_80%_34%)]",
+              tone === "primary" && "bg-primary/10 text-primary",
+            )}
+          >
+            <AlertTriangle className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <h3 className="text-base font-bold text-foreground">{title}</h3>
+            <div className="mt-1 text-sm text-muted-foreground">{message}</div>
+          </div>
+        </div>
+        <div className="mt-6 flex justify-end">
+          <Button variant={tone === "danger" ? "danger" : "primary"} onClick={onClose}>
+            {confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- RejectReasonDialog ---------------- */
 export function RejectReasonDialog({
   open,

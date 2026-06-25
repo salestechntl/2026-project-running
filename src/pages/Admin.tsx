@@ -15,7 +15,7 @@ import {
 import { useRuns, useWeights } from "@/lib/hooks/useEntries";
 import { useSubordinates } from "@/lib/hooks/useTeam";
 import { formatThaiDate, formatThaiDateTime, formatDurationThai, matchesEmployeeSearch } from "@/lib/utils";
-import { Card, Badge, Button, LoadingBlock, Field, Input, Select, ConfirmDialog, RejectReasonDialog } from "@/components/ui";
+import { Card, Badge, Button, LoadingBlock, Field, Input, Select, ConfirmDialog, RejectReasonDialog, AlertDialog } from "@/components/ui";
 import { DateSelect } from "@/components/DateSelect";
 import { cn } from "@/lib/utils";
 import { validateStaffEditNote, defaultStaffEditTargetStatus, type StaffEditTargetStatus } from "@/lib/staff-edit-note";
@@ -753,6 +753,14 @@ function RunRow({
   const [status, setStatus] = useState<StaffEditTargetStatus>(defaultStaffEditTargetStatus(run.status));
   const [rejectNote, setRejectNote] = useState(run.rejectNote ?? "");
   const [staffEditNote, setStaffEditNote] = useState("");
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertMessage, setAlertMessage] = useState("");
+  const [confirmSaveOpen, setConfirmSaveOpen] = useState(false);
+
+  function showAlert(message: string) {
+    setAlertMessage(message);
+    setAlertOpen(true);
+  }
 
   useEffect(() => {
     if (!editing) return;
@@ -772,7 +780,7 @@ function RunRow({
     try {
       await action();
     } catch (e) {
-      window.alert(apiErrorMessage(e));
+      showAlert(apiErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -782,26 +790,33 @@ function RunRow({
     setEditing(true);
   }
 
-  async function saveEdit() {
+  function saveEdit() {
     const dist = Number(distanceKm);
     const durationSec = (Number(h) || 0) * 3600 + (Number(m) || 0) * 60 + (Number(s) || 0);
     if (!dist || dist <= 0) {
-      window.alert("ระยะทางต้องมากกว่า 0");
+      showAlert("ระยะทางต้องมากกว่า 0");
       return;
     }
     if (!durationSec || durationSec <= 0) {
-      window.alert("เวลาที่ใช้ต้องมากกว่า 0");
+      showAlert("เวลาที่ใช้ต้องมากกว่า 0");
       return;
     }
     if (status === "rejected" && !rejectNote.trim()) {
-      window.alert("กรุณาระบุเหตุผลที่ไม่ผ่าน");
+      showAlert("กรุณาระบุเหตุผลที่ไม่ผ่าน");
       return;
     }
     const staffNoteErr = validateStaffEditNote(staffEditNote);
     if (staffNoteErr) {
-      window.alert(staffNoteErr);
+      showAlert(staffNoteErr);
       return;
     }
+    setConfirmSaveOpen(true);
+  }
+
+  async function performSave() {
+    const dist = Number(distanceKm);
+    const durationSec = (Number(h) || 0) * 3600 + (Number(m) || 0) * 60 + (Number(s) || 0);
+    setConfirmSaveOpen(false);
     await act(async () => {
       await onStaffEdit(run, {
         date,
@@ -872,10 +887,27 @@ function RunRow({
           <Button size="sm" variant="outline" onClick={() => setEditing(false)} disabled={busy}>
             ยกเลิก
           </Button>
-          <Button size="sm" onClick={() => void saveEdit()} disabled={busy}>
+          <Button size="sm" onClick={saveEdit} disabled={busy}>
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "บันทึก"}
           </Button>
         </div>
+        <AlertDialog
+          open={alertOpen}
+          title="ไม่สามารถบันทึกได้"
+          message={alertMessage}
+          tone="warning"
+          onClose={() => setAlertOpen(false)}
+        />
+        <ConfirmDialog
+          open={confirmSaveOpen}
+          title="ยืนยันการแก้ไข"
+          message={`บันทึกการแก้ไขการวิ่งวันที่ ${formatThaiDate(date)} และแจ้งหมายเหตุให้พนักงาน`}
+          confirmLabel="บันทึก"
+          cancelLabel="ยกเลิก"
+          tone="primary"
+          onConfirm={() => void performSave()}
+          onCancel={() => setConfirmSaveOpen(false)}
+        />
       </div>
     );
   }
@@ -949,6 +981,14 @@ function WeightRow({
   const [status, setStatus] = useState<StaffEditTargetStatus>(defaultStaffEditTargetStatus(weight.status));
   const [rejectNote, setRejectNote] = useState(weight.rejectNote ?? "");
   const [staffEditNote, setStaffEditNote] = useState("");
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertMessage, setAlertMessage] = useState("");
+  const [confirmSaveOpen, setConfirmSaveOpen] = useState(false);
+
+  function showAlert(message: string) {
+    setAlertMessage(message);
+    setAlertOpen(true);
+  }
 
   useEffect(() => {
     if (!editing) return;
@@ -963,7 +1003,7 @@ function WeightRow({
     try {
       await action();
     } catch (e) {
-      window.alert(apiErrorMessage(e));
+      showAlert(apiErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -973,21 +1013,27 @@ function WeightRow({
     setEditing(true);
   }
 
-  async function saveEdit() {
+  function saveEdit() {
     const kg = Number(weightKg);
     if (!kg || kg <= 0) {
-      window.alert("น้ำหนักต้องมากกว่า 0");
+      showAlert("น้ำหนักต้องมากกว่า 0");
       return;
     }
     if (status === "rejected" && !rejectNote.trim()) {
-      window.alert("กรุณาระบุเหตุผลที่ไม่ผ่าน");
+      showAlert("กรุณาระบุเหตุผลที่ไม่ผ่าน");
       return;
     }
     const staffNoteErr = validateStaffEditNote(staffEditNote);
     if (staffNoteErr) {
-      window.alert(staffNoteErr);
+      showAlert(staffNoteErr);
       return;
     }
+    setConfirmSaveOpen(true);
+  }
+
+  async function performSave() {
+    const kg = Number(weightKg);
+    setConfirmSaveOpen(false);
     await act(async () => {
       await onStaffEdit(weight, {
         weightKg: kg,
@@ -1038,10 +1084,27 @@ function WeightRow({
           <Button size="sm" variant="outline" onClick={() => setEditing(false)} disabled={busy}>
             ยกเลิก
           </Button>
-          <Button size="sm" onClick={() => void saveEdit()} disabled={busy}>
+          <Button size="sm" onClick={saveEdit} disabled={busy}>
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "บันทึก"}
           </Button>
         </div>
+        <AlertDialog
+          open={alertOpen}
+          title="ไม่สามารถบันทึกได้"
+          message={alertMessage}
+          tone="warning"
+          onClose={() => setAlertOpen(false)}
+        />
+        <ConfirmDialog
+          open={confirmSaveOpen}
+          title="ยืนยันการแก้ไข"
+          message={`บันทึกการแก้ไขน้ำหนัก ${Number(weightKg).toFixed(1)} กก. (เดือน ${weight.month}) และแจ้งหมายเหตุให้พนักงาน`}
+          confirmLabel="บันทึก"
+          cancelLabel="ยกเลิก"
+          tone="primary"
+          onConfirm={() => void performSave()}
+          onCancel={() => setConfirmSaveOpen(false)}
+        />
       </div>
     );
   }
