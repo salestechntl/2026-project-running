@@ -16,9 +16,9 @@ import {
   type EmployeeRecord,
 } from "@/lib/employee-admin";
 import { isCheckerRole } from "@/lib/roles";
-import { Badge, Button, Card, ConfirmDialog, Field, Input, Select, LoadingBlock } from "@/components/ui";
+import { Badge, Button, Card, ConfirmDialog, Field, Input, PasswordInput, Select, LoadingBlock } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { passwordsMatch, validatePassword, PASSWORD_FORMAT_HINT } from "@/lib/password";
+import { passwordsMatch, validatePassword, validatePasswordCharacters, PASSWORD_FORMAT_HINT } from "@/lib/password";
 
 const ROLE_LABEL = { employee: "พนักงาน", checker: "Checker", super_admin: "Super Admin" } as const;
 
@@ -576,21 +576,20 @@ export default function EmployeeAdmin() {
               hint={PASSWORD_FORMAT_HINT}
               error={resetPasswordError}
             >
-              <Input
+              <PasswordInput
                 id="reset-pw"
-                type="password"
                 autoComplete="new-password"
                 value={resetPassword}
                 onChange={(e) => {
-                  setResetPassword(e.target.value);
-                  if (resetPasswordError) setResetPasswordError(undefined);
+                  const value = e.target.value;
+                  setResetPassword(value);
+                  setResetPasswordError(validatePasswordCharacters(value) ?? undefined);
                 }}
               />
             </Field>
             <Field label="ยืนยันรหัสผ่านใหม่" required htmlFor="reset-confirm" error={resetConfirmError}>
-              <Input
+              <PasswordInput
                 id="reset-confirm"
-                type="password"
                 autoComplete="new-password"
                 value={resetConfirm}
                 onChange={(e) => {
@@ -603,7 +602,10 @@ export default function EmployeeAdmin() {
               <Button variant="outline" onClick={closeResetPassword} disabled={resetSaving}>
                 ยกเลิก
               </Button>
-              <Button onClick={() => void confirmResetPassword()} disabled={resetSaving}>
+              <Button
+                onClick={() => void confirmResetPassword()}
+                disabled={resetSaving || !!validatePasswordCharacters(resetPassword)}
+              >
                 {resetSaving ? "กำลังบันทึก…" : "บันทึกรหัสผ่านใหม่"}
               </Button>
             </div>

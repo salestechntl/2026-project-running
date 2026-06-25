@@ -4,7 +4,7 @@ import {
   CheckCircle2, AlertTriangle, Clock, Loader2, Search,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { missionName, runDateBounds } from "@/lib/missions";
+import { missionName, staffRunDateBounds } from "@/lib/missions";
 import {
   setRunEntryStatus, setWeightEntryStatus,
   fetchRuns, fetchWeights,
@@ -15,7 +15,7 @@ import {
 import { useRuns, useWeights } from "@/lib/hooks/useEntries";
 import { useSubordinates } from "@/lib/hooks/useTeam";
 import { formatThaiDate, formatThaiDateTime, formatDurationThai, matchesEmployeeSearch } from "@/lib/utils";
-import { Card, Badge, Button, LoadingBlock, Field, Input, Select } from "@/components/ui";
+import { Card, Badge, Button, LoadingBlock, Field, Input, Select, ConfirmDialog, RejectReasonDialog } from "@/components/ui";
 import { DateSelect } from "@/components/DateSelect";
 import { cn } from "@/lib/utils";
 import { validateStaffEditNote, defaultStaffEditTargetStatus, type StaffEditTargetStatus } from "@/lib/staff-edit-note";
@@ -603,6 +603,8 @@ function StatusControls({
   canApprove,
   canReject,
   canEdit,
+  approveMessage,
+  rejectMessage,
   onApprove,
   onReject,
   onEdit,
@@ -612,25 +614,66 @@ function StatusControls({
   canApprove: boolean;
   canReject: boolean;
   canEdit?: boolean;
+  approveMessage?: string;
+  rejectMessage?: string;
   onApprove: () => void;
-  onReject: () => void;
+  onReject: (reason: string) => void;
   onEdit?: () => void;
 }) {
+  const [approveOpen, setApproveOpen] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+
   if (status === "pending") {
     return (
-      <div className="flex flex-wrap items-center justify-end gap-1.5">
-        <Badge tone="warning"><Clock className="h-3 w-3" /> {ENTRY_STATUS_LABEL.pending}</Badge>
-        {canApprove && (
-          <Button size="sm" onClick={onApprove} disabled={busy} className="h-8 px-2.5 text-xs">
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "อนุมัติ"}
-          </Button>
-        )}
-        {canReject && (
-          <Button size="sm" variant="outline" onClick={onReject} disabled={busy} className="h-8 px-2.5 text-xs">
-            ไม่ผ่าน
-          </Button>
-        )}
-      </div>
+      <>
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          <Badge tone="warning"><Clock className="h-3 w-3" /> {ENTRY_STATUS_LABEL.pending}</Badge>
+          {canApprove && (
+            <Button
+              size="sm"
+              onClick={() => setApproveOpen(true)}
+              disabled={busy}
+              className="h-8 px-2.5 text-xs"
+            >
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "อนุมัติ"}
+            </Button>
+          )}
+          {canReject && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setRejectOpen(true)}
+              disabled={busy}
+              className="h-8 px-2.5 text-xs"
+            >
+              ไม่ผ่าน
+            </Button>
+          )}
+        </div>
+        <ConfirmDialog
+          open={approveOpen}
+          title="ยืนยันการอนุมัติ"
+          message={approveMessage ?? "อนุมัติรายการนี้และบันทึกผลการตรวจสอบ"}
+          confirmLabel="อนุมัติ"
+          cancelLabel="ยกเลิก"
+          tone="primary"
+          onConfirm={() => {
+            setApproveOpen(false);
+            onApprove();
+          }}
+          onCancel={() => setApproveOpen(false)}
+        />
+        <RejectReasonDialog
+          open={rejectOpen}
+          message={rejectMessage ?? "ระบุเหตุผลที่ไม่ผ่านก่อนบันทึกผลการตรวจสอบ"}
+          busy={busy}
+          onConfirm={(reason) => {
+            setRejectOpen(false);
+            onReject(reason);
+          }}
+          onCancel={() => setRejectOpen(false)}
+        />
+      </>
     );
   }
   if (status === "expired") {
@@ -669,17 +712,6 @@ function StatusControls({
   );
 }
 
-function askRejectReason(): string | null {
-  const r = window.prompt("ระบุเหตุผลที่ไม่ผ่าน (บังคับ)", "");
-  if (r === null) return null;
-  const trimmed = r.trim();
-  if (!trimmed) {
-    window.alert("กรุณาระบุเหตุผล");
-    return askRejectReason();
-  }
-  return trimmed;
-}
-
 function RunRow({
   run,
   canApprove,
@@ -711,7 +743,7 @@ function RunRow({
 }) {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
-  const bounds = useMemo(() => runDateBounds(), []);
+  const bounds = useMemo(() => staffRunDateBounds(), []);
   const [date, setDate] = useState(run.date);
   const [runType, setRunType] = useState<RunType>(run.runType);
   const [distanceKm, setDistanceKm] = useState(String(run.distanceKm));
@@ -874,12 +906,10 @@ function RunRow({
           canApprove={canApprove}
           canReject={canReject}
           canEdit={canEdit}
+          approveMessage={`อนุมัติการวิ่งวันที่ ${formatThaiDate(run.date)} · ${run.distanceKm.toFixed(2)} กม.`}
+          rejectMessage={`การวิ่งวันที่ ${formatThaiDate(run.date)} · ${run.distanceKm.toFixed(2)} กม.`}
           onApprove={() => void act(() => onStatusChange(run, "approved"))}
-          onReject={() => {
-            const r = askRejectReason();
-            if (r === null) return;
-            void act(() => onStatusChange(run, "rejected", r));
-          }}
+          onReject={(reason) => void act(() => onStatusChange(run, "rejected", reason))}
           onEdit={openEdit}
         />
       </div>
@@ -1036,12 +1066,10 @@ function WeightRow({
           canApprove={canApprove}
           canReject={canReject}
           canEdit={canEdit}
+          approveMessage={`อนุมัติน้ำหนักเดือน ${weight.month} (${weight.period === "start" ? "ต้นเดือน" : "สิ้นเดือน"}) · ${weight.weightKg.toFixed(1)} กก.`}
+          rejectMessage={`น้ำหนักเดือน ${weight.month} (${weight.period === "start" ? "ต้นเดือน" : "สิ้นเดือน"}) · ${weight.weightKg.toFixed(1)} กก.`}
           onApprove={() => void act(() => onStatusChange(weight, "approved"))}
-          onReject={() => {
-            const r = askRejectReason();
-            if (r === null) return;
-            void act(() => onStatusChange(weight, "rejected", r));
-          }}
+          onReject={(reason) => void act(() => onStatusChange(weight, "rejected", reason))}
           onEdit={openEdit}
         />
       </div>

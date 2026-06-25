@@ -4,6 +4,7 @@ import { signToken } from "../_lib/auth/jwt.js";
 import { hashPassword, validatePassword, verifyPassword } from "../_lib/auth/password.js";
 import type { AuthUser, DbEmployee, LoginResponse } from "../_lib/auth/types.js";
 import { isCheckerRole, normalizeDbRole } from "../_lib/auth/roles.js";
+import { normalizeEmployeeId } from "../_lib/employees/normalize-id.js";
 
 const LOGIN_FAILED_MSG = "รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง";
 
@@ -65,7 +66,7 @@ async function issueLogin(
 }
 
 async function handleSetPassword(req: VercelRequest, res: VercelResponse) {
-  const employeeId = String(req.body?.employee_id ?? req.body?.employeeId ?? "").trim();
+  const employeeId = normalizeEmployeeId(String(req.body?.employee_id ?? req.body?.employeeId ?? ""));
   const password = String(req.body?.password ?? "");
 
   if (!employeeId) {
@@ -99,10 +100,12 @@ async function handleSetPassword(req: VercelRequest, res: VercelResponse) {
   }
 
   const passwordHash = await hashPassword(password);
+  const canonicalId = emp.employee_id;
+
   const { error: updateError } = await supabase
     .from("employees")
     .update({ password_hash: passwordHash })
-    .eq("employee_id", employeeId);
+    .eq("employee_id", canonicalId);
 
   if (updateError) {
     console.error("set_password update error:", updateError);
@@ -110,10 +113,83 @@ async function handleSetPassword(req: VercelRequest, res: VercelResponse) {
   }
 
   const { error: auditError } = await supabase.from("audit_log").insert({
-    actor_id: employeeId,
+    actor_id: canonicalId,
     action: "auth.set_password",
     target_type: "employee",
-    target_id: employeeId,
+    target_id: canonicalId,
+  });
+  if (auditError) console.error("audit_log insert error:", auditError);
+
+  return res.status(200).json({ ok: true });
+}
+
+async function handleChangePassword(req: VercelRequest, res: VercelResponse) {
+  const employeeId = normalizeEmployeeId(String(req.body?.employee_id ?? req.body?.employeeId ?? ""));
+  const currentPassword = String(req.body?.current_password ?? req.body?.currentPassword ?? "");
+  const newPassword = String(req.body?.new_password ?? req.body?.newPassword ?? "");
+
+  if (!employeeId) {
+    return res.status(400).json({ error: "กรุณากรอกรหัสพนักงาน" });
+  }
+  if (!currentPassword) {
+    return res.status(400).json({ error: "กรุณากรอกรหัสผ่านเดิม" });
+  }
+
+  const passwordError = validatePassword(newPassword);
+  if (passwordError) {
+    return res.status(400).json({ error: passwordError });
+  }
+  if (currentPassword === newPassword) {
+    return res.status(400).json({ error: "รหัสผ่านใหม่ต้องไม่ซ้ำรหัสผ่านเดิม" });
+  }
+
+  const supabase = createAdminClient();
+
+  const { data: emp, error } = await supabase
+    .from("employees")
+    .select("employee_id, password_hash, is_active")
+    .eq("employee_id", employeeId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("change_password query error:", error);
+    return res.status(500).json({ error: "เกิดข้อผิดพลาดในการตรวจสอบรหัสพนักงาน" });
+  }
+
+  if (!emp || !emp.is_active) {
+    return res.status(400).json({ error: "ไม่พบรหัสพนักงานนี้ในระบบ หรือบัญชีถูกปิดใช้งาน" });
+  }
+
+  if (!emp.password_hash) {
+    return res.status(403).json({
+      error: "ยังไม่ได้ตั้งรหัสผ่าน กรุณาสร้างรหัสผ่านก่อน",
+      code: "PASSWORD_NOT_SET",
+    });
+  }
+
+  const valid = await verifyPassword(currentPassword, emp.password_hash);
+  if (!valid) {
+    return res.status(401).json({ error: "รหัสผ่านเดิมไม่ถูกต้อง" });
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+  const canonicalId = emp.employee_id;
+
+  const { error: updateError } = await supabase
+    .from("employees")
+    .update({ password_hash: passwordHash })
+    .eq("employee_id", canonicalId);
+
+  if (updateError) {
+    console.error("change_password update error:", updateError);
+    return res.status(500).json({ error: "ไม่สามารถเปลี่ยนรหัสผ่านได้" });
+  }
+
+  const { error: auditError } = await supabase.from("audit_log").insert({
+    actor_id: canonicalId,
+    action: "auth.change_password",
+    target_type: "employee",
+    target_id: canonicalId,
   });
   if (auditError) console.error("audit_log insert error:", auditError);
 
@@ -121,7 +197,7 @@ async function handleSetPassword(req: VercelRequest, res: VercelResponse) {
 }
 
 async function handleLogin(req: VercelRequest, res: VercelResponse) {
-  const employeeId = String(req.body?.employee_id ?? req.body?.employeeId ?? "").trim();
+  const employeeId = normalizeEmployeeId(String(req.body?.employee_id ?? req.body?.employeeId ?? ""));
   const password = String(req.body?.password ?? "");
 
   if (!employeeId) {
@@ -177,6 +253,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const action = String(req.body?.action ?? "login").trim();
     if (action === "set_password") {
       return handleSetPassword(req, res);
+    }
+    if (action === "change_password") {
+      return handleChangePassword(req, res);
     }
     return handleLogin(req, res);
   } catch (err) {

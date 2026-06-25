@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Footprints, ArrowRight, IdCard, Lock, KeyRound } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { APP_VERSION } from "@/lib/version";
@@ -7,14 +7,15 @@ import { normalizeEmployeeId } from "@/lib/employee-id";
 import { passwordsMatch, validatePassword, validatePasswordCharacters, PASSWORD_FORMAT_HINT } from "@/lib/password";
 import { Button, Field, Input, PasswordInput } from "@/components/ui";
 
-export default function SetPassword() {
-  const { setPassword, user, loading: authLoading } = useAuth();
+export default function ChangePassword() {
+  const { changePassword, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const [employeeId, setEmployeeId] = useState(searchParams.get("employee_id") ?? "");
-  const [password, setPasswordValue] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [employeeError, setEmployeeError] = useState<string>();
+  const [currentError, setCurrentError] = useState<string>();
   const [passwordError, setPasswordError] = useState<string>();
   const [confirmError, setConfirmError] = useState<string>();
   const [success, setSuccess] = useState(false);
@@ -24,14 +25,10 @@ export default function SetPassword() {
     if (!authLoading && user) navigate("/app", { replace: true });
   }, [user, authLoading, navigate]);
 
-  useEffect(() => {
-    const fromQuery = searchParams.get("employee_id");
-    if (fromQuery) setEmployeeId(fromQuery);
-  }, [searchParams]);
-
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setEmployeeError(undefined);
+    setCurrentError(undefined);
     setPasswordError(undefined);
     setConfirmError(undefined);
 
@@ -40,24 +37,36 @@ export default function SetPassword() {
       setEmployeeError("กรุณากรอกรหัสพนักงาน");
       return;
     }
+    if (!currentPassword) {
+      setCurrentError("กรุณากรอกรหัสผ่านเดิม");
+      return;
+    }
 
-    const pwError = validatePassword(password);
+    const pwError = validatePassword(newPassword);
     if (pwError) {
       setPasswordError(pwError);
       return;
     }
 
-    const matchError = passwordsMatch(password, confirm);
+    const matchError = passwordsMatch(newPassword, confirm);
     if (matchError) {
       setConfirmError(matchError);
       return;
     }
 
     setLoading(true);
-    const res = await setPassword(id, password);
+    const res = await changePassword(id, currentPassword, newPassword);
     setLoading(false);
 
     if (!res.ok) {
+      if (res.needsPassword) {
+        navigate(`/set-password?employee_id=${encodeURIComponent(id)}`, { replace: true });
+        return;
+      }
+      if (res.error === "รหัสผ่านเดิมไม่ถูกต้อง") {
+        setCurrentError(res.error);
+        return;
+      }
       setPasswordError(res.error);
       return;
     }
@@ -76,19 +85,19 @@ export default function SetPassword() {
             </span>
             <div>
               <p className="font-display text-lg font-extrabold tracking-tight">Running Camp 2026</p>
-              <p className="text-sm text-muted-foreground">สร้างรหัสผ่านครั้งแรก</p>
+              <p className="text-sm text-muted-foreground">เปลี่ยนรหัสผ่าน</p>
             </div>
           </div>
 
           {success ? (
             <div className="rounded-lg border border-success/30 bg-success/10 px-4 py-5 text-sm text-success">
-              ตั้งรหัสผ่านสำเร็จ กำลังพาไปหน้าเข้าสู่ระบบ…
+              เปลี่ยนรหัสผ่านสำเร็จ กำลังพาไปหน้าเข้าสู่ระบบ…
             </div>
           ) : (
             <>
-              <h2 className="font-display text-2xl font-bold tracking-tight text-foreground">สร้างรหัสผ่าน</h2>
+              <h2 className="font-display text-2xl font-bold tracking-tight text-foreground">เปลี่ยนรหัสผ่าน</h2>
               <p className="mt-1.5 text-sm text-muted-foreground">
-                สำหรับพนักงานที่ยังไม่เคยตั้งรหัสผ่าน — รหัสพนักงานต้องตรงกับที่มีในระบบ
+                กรอกรหัสผ่านเดิมและตั้งรหัสผ่านใหม่ — รหัสพนักงานต้องตรงกับที่มีในระบบ
               </p>
 
               <form onSubmit={submit} className="mt-7 space-y-5" noValidate>
@@ -111,37 +120,54 @@ export default function SetPassword() {
                   </div>
                 </Field>
 
+                <Field label="รหัสผ่านเดิม" required htmlFor="current-password" error={currentError}>
+                  <div className="relative">
+                    <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground" />
+                    <PasswordInput
+                      id="current-password"
+                      autoComplete="current-password"
+                      placeholder="รหัสผ่านปัจจุบัน"
+                      className="pl-11"
+                      value={currentPassword}
+                      onChange={(e) => {
+                        setCurrentPassword(e.target.value);
+                        if (currentError) setCurrentError(undefined);
+                      }}
+                    />
+                  </div>
+                </Field>
+
                 <Field
-                  label="รหัสผ่าน"
+                  label="รหัสผ่านใหม่"
                   required
-                  htmlFor="password"
+                  htmlFor="new-password"
                   hint={PASSWORD_FORMAT_HINT}
                   error={passwordError}
                 >
                   <div className="relative">
-                    <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground" />
+                    <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground" />
                     <PasswordInput
-                      id="password"
+                      id="new-password"
                       autoComplete="new-password"
-                      placeholder="ตั้งรหัสผ่าน"
+                      placeholder="ตั้งรหัสผ่านใหม่"
                       className="pl-11"
-                      value={password}
+                      value={newPassword}
                       onChange={(e) => {
                         const value = e.target.value;
-                        setPasswordValue(value);
+                        setNewPassword(value);
                         setPasswordError(validatePasswordCharacters(value) ?? undefined);
                       }}
                     />
                   </div>
                 </Field>
 
-                <Field label="ยืนยันรหัสผ่าน" required htmlFor="confirm" error={confirmError}>
+                <Field label="ยืนยันรหัสผ่านใหม่" required htmlFor="confirm" error={confirmError}>
                   <div className="relative">
                     <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground" />
                     <PasswordInput
                       id="confirm"
                       autoComplete="new-password"
-                      placeholder="กรอกรหัสผ่านอีกครั้ง"
+                      placeholder="กรอกรหัสผ่านใหม่อีกครั้ง"
                       className="pl-11"
                       value={confirm}
                       onChange={(e) => {
@@ -156,16 +182,19 @@ export default function SetPassword() {
                   type="submit"
                   size="lg"
                   className="w-full"
-                  disabled={loading || !!validatePasswordCharacters(password)}
+                  disabled={loading || !!validatePasswordCharacters(newPassword)}
                 >
-                  {loading ? "กำลังบันทึก…" : "บันทึกรหัสผ่าน"}
+                  {loading ? "กำลังบันทึก…" : "เปลี่ยนรหัสผ่าน"}
                   {!loading && <ArrowRight className="h-4 w-4" />}
                 </Button>
 
                 <p className="text-center text-sm text-muted-foreground">
-                  มีรหัสผ่านแล้ว?{" "}
                   <Link to="/" className="font-medium text-primary hover:underline">
                     กลับไปเข้าสู่ระบบ
+                  </Link>
+                  {" · "}
+                  <Link to="/set-password" className="font-medium text-primary hover:underline">
+                    สร้างรหัสผ่านครั้งแรก
                   </Link>
                 </p>
               </form>

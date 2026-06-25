@@ -6,6 +6,8 @@ import { getAuthMode } from "./auth-config";
 import {
   apiDeleteRun,
   apiFetchHomeStats,
+  apiFetchRunById,
+  apiFetchRunHistory,
   apiFetchRuns,
   apiFetchSubordinates,
   apiFetchWeights,
@@ -40,13 +42,24 @@ import { currentMonthKey } from "./missions";
 import {
   cachedFetch,
   cacheKeyHome,
+  cacheKeyRunHistory,
   cacheKeyRuns,
   cacheKeySubordinates,
   cacheKeyWeights,
+  cacheKeyWeightsLite,
   invalidateRequestCache,
 } from "./request-cache";
 
 export type { HomeStats } from "./home-stats";
+
+export interface RunHistoryPage {
+  runs: RunEntry[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export const RUN_HISTORY_PAGE_SIZE = 5;
 
 function notifyDataChanged() {
   invalidateRequestCache();
@@ -62,8 +75,8 @@ async function loadRuns(employeeId?: string): Promise<RunEntry[]> {
   return localGetRuns(employeeId);
 }
 
-async function loadWeights(employeeId?: string): Promise<WeightEntry[]> {
-  if (getAuthMode() === "api") return apiFetchWeights(employeeId);
+async function loadWeights(employeeId?: string, lite?: boolean): Promise<WeightEntry[]> {
+  if (getAuthMode() === "api") return apiFetchWeights(employeeId, lite ? { lite: true } : undefined);
   return localGetWeights(employeeId);
 }
 
@@ -78,10 +91,46 @@ export async function fetchRuns(employeeId?: string): Promise<RunEntry[]> {
   return cachedFetch(cacheKeyRuns(id), () => loadRuns(id));
 }
 
-export async function fetchWeights(employeeId?: string): Promise<WeightEntry[]> {
+export async function fetchRunById(id: string): Promise<RunEntry> {
+  const trimmed = id.trim();
+  if (!trimmed) throw new Error("ไม่พบรหัสรายการ");
+  if (getAuthMode() === "api") return apiFetchRunById(trimmed);
+  const run = localGetRuns().find((r) => r.id === trimmed);
+  if (!run) throw new Error("ไม่พบรายการ");
+  return run;
+}
+
+export async function fetchRunHistory(
+  employeeId: string,
+  page: number,
+  limit = RUN_HISTORY_PAGE_SIZE,
+): Promise<RunHistoryPage> {
+  const id = employeeId.trim();
+  if (!id) return { runs: [], total: 0, page, limit };
+
+  if (getAuthMode() === "api") {
+    return cachedFetch(cacheKeyRunHistory(id, page, limit), () => apiFetchRunHistory(id, page, limit));
+  }
+
+  const sorted = [...localGetRuns(id)].sort((a, b) => b.createdAt - a.createdAt);
+  const total = sorted.length;
+  const from = (page - 1) * limit;
+  return {
+    runs: sorted.slice(from, from + limit),
+    total,
+    page,
+    limit,
+  };
+}
+
+export async function fetchWeights(
+  employeeId?: string,
+  opts?: { lite?: boolean },
+): Promise<WeightEntry[]> {
   const id = employeeId?.trim();
-  if (!id) return loadWeights(employeeId);
-  return cachedFetch(cacheKeyWeights(id), () => loadWeights(id));
+  if (!id) return loadWeights(employeeId, opts?.lite);
+  const key = opts?.lite ? cacheKeyWeightsLite(id) : cacheKeyWeights(id);
+  return cachedFetch(key, () => loadWeights(id, opts?.lite));
 }
 
 export async function saveRunEntry(

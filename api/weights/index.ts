@@ -12,12 +12,23 @@ import {
   syncEntryAttachments,
 } from "../_lib/storage/attachments.js";
 import { inlineWeightImageFallback } from "../_lib/storage/inline-fallback.js";
+import { parseEntryListQuery } from "../_lib/entries/list-query.js";
+import {
+  assertWeightCanCreate,
+  assertWeightCanEditPending,
+  assertWeightCanResubmit,
+} from "../_lib/entries/weight-window.js";
 
 async function enrichWeights(
   supabase: ReturnType<typeof createAdminClient>,
   rows: DbWeightRow[],
   uploadedBy: string,
+  lite: boolean,
 ): Promise<ReturnType<typeof mapWeight>[]> {
+  if (lite || rows.length === 0) {
+    return rows.map((row) => mapWeight(row));
+  }
+
   const ids = rows.map((r) => r.id);
   let views = await loadAttachmentViews(supabase, "weight", ids);
 
@@ -67,7 +78,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(500).json({ error: "ไม่สามารถโหลดข้อมูลน้ำหนักได้" });
       }
 
-      const weights = await enrichWeights(supabase, (data ?? []) as DbWeightRow[], auth.sub);
+      const listQuery = parseEntryListQuery(req);
+      const weights = await enrichWeights(
+        supabase,
+        (data ?? []) as DbWeightRow[],
+        auth.sub,
+        listQuery.lite,
+      );
       return res.status(200).json({ weights });
     }
 
@@ -102,6 +119,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: "แนบภาพน้ำหนัก" });
       }
 
+      const periodKey = period as "start" | "end";
+
       let existingRow: DbWeightRow | undefined;
       if (id) {
         const { data: existing, error: fetchError } = await supabase
@@ -125,6 +144,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         if (!canApproveEntries(auth) && existingRow.status !== "pending") {
           return res.status(400).json({ error: "แก้ไขได้เฉพาะรายการที่รออนุมัติ" });
+        }
+        const editWindowError = assertWeightCanEditPending(month, periodKey, existingRow.status);
+        if (editWindowError) {
+          return res.status(400).json({ error: editWindowError });
+        }
+      } else {
+        const { data: rejectedRow } = await supabase
+          .from("weight_entries")
+          .select("id")
+          .eq("employee_id", employeeId)
+          .eq("month", month)
+          .eq("period", periodKey)
+          .eq("status", "rejected")
+          .maybeSingle();
+
+        if (rejectedRow) {
+          const resubmitError = assertWeightCanResubmit(month, periodKey);
+          if (resubmitError) {
+            return res.status(400).json({ error: resubmitError });
+          }
+        }
+
+        const createWindowError = assertWeightCanCreate(month, periodKey);
+        if (createWindowError) {
+          return res.status(400).json({ error: createWindowError });
         }
       }
 

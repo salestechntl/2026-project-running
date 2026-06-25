@@ -9,7 +9,7 @@
 
 import { EMPLOYEES, findEmployee, isChecker, isTeamLead, subordinates } from "./data";
 import { shouldExpirePendingMs } from "./expire";
-import { currentMonthKey, monthOf, missionName } from "./missions";
+import { currentMonthKey, monthOf, missionName, weightCanCreate, weightWindow, weightCanResubmitRejected } from "./missions";
 
 /** สถานะการตรวจ: รออนุมัติ / อนุมัติแล้ว / ไม่ผ่าน / หมดอายุ */
 export type EntryStatus = "pending" | "approved" | "rejected" | "expired";
@@ -281,6 +281,13 @@ export function saveWeight(entry: WeightInput): WeightEntry {
       if (!isTeamLead(entry.employeeId) && cur.status !== "pending") {
         throw new Error("แก้ไขได้เฉพาะรายการที่รออนุมัติ");
       }
+      if (cur.status === "pending" && !weightWindow(cur.month, cur.period).open) {
+        throw new Error(
+          cur.period === "start"
+            ? "เลยช่วงเวลาที่แก้ไขน้ำหนักต้นเดือนแล้ว"
+            : "เลยช่วงเวลาที่แก้ไขน้ำหนักสิ้นเดือนแล้ว",
+        );
+      }
       rows[idx] = {
         ...rows[idx],
         ...entry,
@@ -292,6 +299,29 @@ export function saveWeight(entry: WeightInput): WeightEntry {
       notifyDataChanged();
       return rows[idx];
     }
+  }
+  if (
+    rows.some(
+      (r) =>
+        r.employeeId === entry.employeeId &&
+        r.month === entry.month &&
+        r.period === entry.period &&
+        r.status === "rejected",
+    ) &&
+    !weightCanResubmitRejected(entry.month, entry.period)
+  ) {
+    throw new Error(
+      entry.period === "start"
+        ? "ส่งน้ำหนักต้นเดือนใหม่ได้เฉพาะวันที่ 1 ของเดือน"
+        : "ส่งน้ำหนักสิ้นเดือนใหม่ได้เฉพาะวันสุดท้ายของเดือนและวันที่ 1 เดือนถัดไป",
+    );
+  }
+  if (!weightCanCreate(entry.month, entry.period)) {
+    throw new Error(
+      entry.period === "start"
+        ? "บันทึกน้ำหนักต้นเดือนได้เฉพาะวันที่ 1 ของเดือน"
+        : "ยังไม่อยู่ในช่วงเวลาที่เปิดให้บันทึกน้ำหนักสิ้นเดือน",
+    );
   }
   const now = Date.now();
   const created: WeightEntry = {

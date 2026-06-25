@@ -2,14 +2,23 @@ export const PASSWORD_MIN_LEN = 4;
 export const PASSWORD_MAX_LEN = 30;
 
 export const PASSWORD_FORMAT_HINT =
-  "4–30 ตัวอักษร · ใช้ได้เฉพาะภาษาอังกฤษ ตัวเลข และสัญลักษณ์ (ห้ามภาษาไทย)";
+  "4–30 ตัวอักษร · ใช้ได้เฉพาะภาษาอังกฤษ ตัวเลข และสัญลักษณ์";
 
-const THAI_CHAR_PATTERN = /[\u0E00-\u0E7F]/;
+/** Printable ASCII only — rejects Thai and other non-Latin scripts. */
+const PASSWORD_ALLOWED_PATTERN = /^[\x20-\x7E]+$/;
+
+/** Real-time check while typing (skips length). */
+export function validatePasswordCharacters(password: string): string | null {
+  if (!password) return null;
+  if (!PASSWORD_ALLOWED_PATTERN.test(password)) {
+    return "รหัสผ่านใช้ได้เฉพาะภาษาอังกฤษ ตัวเลข และสัญลักษณ์เท่านั้น";
+  }
+  return null;
+}
 
 export function validatePassword(password: string): string | null {
-  if (THAI_CHAR_PATTERN.test(password)) {
-    return "รหัสผ่านห้ามมีตัวอักษรภาษาไทย — ใช้ภาษาอังกฤษ ตัวเลข หรือสัญลักษณ์เท่านั้น";
-  }
+  const charError = validatePasswordCharacters(password);
+  if (charError) return charError;
   const len = password.length;
   if (len < PASSWORD_MIN_LEN || len > PASSWORD_MAX_LEN) {
     return `รหัสผ่านต้องมีความยาว ${PASSWORD_MIN_LEN}-${PASSWORD_MAX_LEN} ตัวอักษร`;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { DATA_CHANGED_EVENT, fetchHomeStats, fetchRuns, fetchWeights, type HomeStats } from "../entries";
+import { DATA_CHANGED_EVENT, fetchHomeStats, fetchRunHistory, fetchRuns, fetchWeights, RUN_HISTORY_PAGE_SIZE, type HomeStats } from "../entries";
 import type { RunEntry, WeightEntry } from "../store";
 import { holdLoading } from "./loading";
 
@@ -148,12 +148,87 @@ export function useRuns(employeeId: string | undefined, options?: UseEntriesOpti
   return { runs, loading, refresh, patchRun };
 }
 
+/** ประวัติการวิ่งแบบ server-side pagination — โหลดเฉพาะหน้าที่แสดง */
+export function useRunHistory(employeeId: string | undefined, pageSize = RUN_HISTORY_PAGE_SIZE) {
+  const [page, setPage] = useState(1);
+  const [runs, setRuns] = useState<RunEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  const refresh = useCallback(
+    async (opts?: { silent?: boolean; page?: number }) => {
+      if (!employeeId) {
+        setRuns([]);
+        setTotal(0);
+        setLoading(false);
+        return;
+      }
+      const targetPage = opts?.page ?? page;
+      const silent = opts?.silent === true;
+      if (!silent) setLoading(true);
+      const startedAt = Date.now();
+      try {
+        const data = await fetchRunHistory(employeeId, targetPage, pageSize);
+        setRuns(data.runs);
+        setTotal(data.total);
+        if (data.page !== page) setPage(data.page);
+      } catch (e) {
+        console.error("useRunHistory:", e);
+        if (!silent) {
+          setRuns([]);
+          setTotal(0);
+        }
+      } finally {
+        if (!silent) {
+          await holdLoading(startedAt);
+          setLoading(false);
+        }
+      }
+    },
+    [employeeId, page, pageSize],
+  );
+
+  useEffect(() => {
+    setPage(1);
+    setRuns([]);
+    setTotal(0);
+    setLoading(true);
+  }, [employeeId]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const onChange = () => void refresh({ silent: true, page });
+    window.addEventListener(DATA_CHANGED_EVENT, onChange);
+    return () => window.removeEventListener(DATA_CHANGED_EVENT, onChange);
+  }, [refresh, page]);
+
+  const goToPage = useCallback(
+    (next: number) => {
+      const clamped = Math.min(Math.max(1, next), totalPages);
+      setPage(clamped);
+    },
+    [totalPages],
+  );
+
+  useEffect(() => {
+    setPage((p) => Math.min(p, totalPages));
+  }, [totalPages]);
+
+  return { runs, total, page, totalPages, loading, refresh, goToPage, pageSize };
+}
+
 export function useWeights(
   employeeId: string | undefined,
   month?: string,
-  options?: UseEntriesOptions,
+  options?: UseEntriesOptions & { lite?: boolean },
 ) {
   const listenChanges = options?.listenChanges !== false;
+  const lite = options?.lite === true;
   const [weights, setWeights] = useState<WeightEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -173,7 +248,7 @@ export function useWeights(
       if (!silent) setLoading(true);
       const startedAt = Date.now();
       try {
-        const rows = await fetchWeights(employeeId);
+        const rows = await fetchWeights(employeeId, lite ? { lite: true } : undefined);
         setWeights(month ? rows.filter((w) => w.month === month) : rows);
       } catch (e) {
         console.error("useWeights:", e);
@@ -185,7 +260,7 @@ export function useWeights(
         }
       }
     },
-    [employeeId, month],
+    [employeeId, month, lite],
   );
 
   const patchWeight = useCallback((id: string, patch: Partial<WeightEntry>) => {

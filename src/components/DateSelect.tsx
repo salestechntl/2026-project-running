@@ -26,6 +26,7 @@ export function DateSelect({
   min,
   max,
   onChange,
+  formatOption,
   className,
 }: {
   id?: string;
@@ -33,6 +34,7 @@ export function DateSelect({
   min: string;
   max: string;
   onChange: (iso: string) => void;
+  formatOption?: (iso: string) => string;
   className?: string;
 }) {
   const options = useMemo(() => {
@@ -56,7 +58,7 @@ export function DateSelect({
     >
       {options.map((iso) => (
         <option key={iso} value={iso}>
-          {formatThaiDate(iso)}
+          {formatOption ? formatOption(iso) : formatThaiDate(iso)}
         </option>
       ))}
     </Select>

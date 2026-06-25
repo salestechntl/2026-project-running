@@ -8,6 +8,7 @@ import {
   validateEmployeeInput,
 } from "./_lib/employees/validate.js";
 import { hashPassword, validatePassword } from "./_lib/auth/password.js";
+import { normalizeEmployeeId } from "./_lib/employees/normalize-id.js";
 
 async function loadEmployeeContext(supabase: ReturnType<typeof createAdminClient>) {
   const { data, error } = await supabase
@@ -92,7 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === "PATCH") {
       const body = (req.body ?? {}) as Record<string, unknown>;
-      const originalId = String(body.employeeId ?? body.employee_id ?? "").trim();
+      const originalId = normalizeEmployeeId(String(body.employeeId ?? body.employee_id ?? ""));
       if (!originalId) {
         return res.status(400).json({ error: "กรุณาระบุรหัสพนักงาน" });
       }
@@ -193,7 +194,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === "DELETE") {
-      const id = String(req.query.employee_id ?? req.query.id ?? "").trim();
+      const id = normalizeEmployeeId(String(req.query.employee_id ?? req.query.id ?? ""));
       if (!id) {
         return res.status(400).json({ error: "กรุณาระบุรหัสพนักงาน" });
       }

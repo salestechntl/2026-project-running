@@ -1,5 +1,6 @@
 import type { DbRole } from "../auth/types.js";
 import { parseDbRoleInput } from "../auth/roles.js";
+import { normalizeEmployeeId } from "./normalize-id.js";
 
 export interface EmployeeFormInput {
   employeeId: string;
@@ -18,17 +19,27 @@ export interface FieldError {
 
 const ID_RE = /^[A-Za-z0-9_-]{1,32}$/;
 
+function existingIdsHas(existingIds: Set<string>, id: string): boolean {
+  const norm = normalizeEmployeeId(id);
+  for (const existing of existingIds) {
+    if (normalizeEmployeeId(existing) === norm) return true;
+  }
+  return false;
+}
+
 export function normalizeEmployeeInput(raw: Record<string, unknown>): EmployeeFormInput {
   const managerRaw = String(raw.managerId ?? raw.manager_id ?? "").trim();
   const roleRaw = String(raw.role ?? "employee").trim();
   const activeRaw = raw.isActive ?? raw.is_active;
 
+  const employeeIdRaw = String(raw.employeeId ?? raw.employee_id ?? "").trim();
+
   return {
-    employeeId: String(raw.employeeId ?? raw.employee_id ?? "").trim(),
+    employeeId: employeeIdRaw ? normalizeEmployeeId(employeeIdRaw) : "",
     name: String(raw.name ?? "").trim(),
     position: String(raw.position ?? "").trim(),
     department: String(raw.department ?? "").trim(),
-    managerId: managerRaw || null,
+    managerId: managerRaw ? normalizeEmployeeId(managerRaw) : null,
     role: parseDbRoleInput(roleRaw),
     isActive: activeRaw === false || activeRaw === "false" ? false : Boolean(activeRaw ?? true),
   };
@@ -54,7 +65,7 @@ export function validateEmployeeInput(
         field: "employeeId",
         message: "รหัสพนักงานใช้ได้เฉพาะ A-Z, 0-9, _ และ - (สูงสุด 32 ตัว)",
       });
-    } else if (opts.existingIds.has(input.employeeId)) {
+    } else if (existingIdsHas(opts.existingIds, input.employeeId)) {
       errors.push({ field: "employeeId", message: "รหัสพนักงานนี้มีในระบบแล้ว" });
     }
   } else if (!opts.originalId) {
@@ -79,7 +90,7 @@ export function validateEmployeeInput(
   if (input.managerId) {
     if (input.managerId === id) {
       errors.push({ field: "managerId", message: "หัวหน้าต้องไม่ใช่ตัวเอง" });
-    } else if (!opts.existingIds.has(input.managerId)) {
+    } else if (!existingIdsHas(opts.existingIds, input.managerId)) {
       errors.push({ field: "managerId", message: "ไม่พบรหัสหัวหน้าในระบบ" });
     }
   }

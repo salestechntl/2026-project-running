@@ -13,12 +13,18 @@ import {
   migrateLegacyRunImages,
   snapshotEntry,
 } from "../_lib/storage/attachments.js";
+import { parseEntryListQuery } from "../_lib/entries/list-query.js";
 
 async function enrichRuns(
   supabase: ReturnType<typeof createAdminClient>,
   rows: DbRunRow[],
   uploadedBy: string,
+  lite: boolean,
 ): Promise<ReturnType<typeof mapRun>[]> {
+  if (lite || rows.length === 0) {
+    return rows.map((row) => mapRun(row));
+  }
+
   const ids = rows.map((r) => r.id);
   let views = await loadAttachmentViews(supabase, "run", ids);
 
@@ -64,6 +70,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       await expirePendingEntries(supabase, { employeeId: targetId });
 
+      const listQuery = parseEntryListQuery(req);
+
+      if (listQuery.paginated) {
+        const from = (listQuery.page - 1) * listQuery.limit;
+        const to = from + listQuery.limit - 1;
+
+        const { count, error: countError } = await supabase
+          .from("run_entries")
+          .select("*", { count: "exact", head: true })
+          .eq("employee_id", targetId);
+
+        if (countError) {
+          console.error("runs count error:", countError);
+          return res.status(500).json({ error: "ไม่สามารถโหลดข้อมูลการวิ่งได้" });
+        }
+
+        const { data, error } = await supabase
+          .from("run_entries")
+          .select("*")
+          .eq("employee_id", targetId)
+          .order("created_at", { ascending: false })
+          .range(from, to);
+
+        if (error) {
+          console.error("runs list error:", error);
+          return res.status(500).json({ error: "ไม่สามารถโหลดข้อมูลการวิ่งได้" });
+        }
+
+        const runs = await enrichRuns(
+          supabase,
+          (data ?? []) as DbRunRow[],
+          auth.sub,
+          listQuery.lite || listQuery.paginated,
+        );
+        return res.status(200).json({
+          runs,
+          total: count ?? runs.length,
+          page: listQuery.page,
+          limit: listQuery.limit,
+        });
+      }
+
       const { data, error } = await supabase
         .from("run_entries")
         .select("*")
@@ -76,7 +124,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(500).json({ error: "ไม่สามารถโหลดข้อมูลการวิ่งได้" });
       }
 
-      const runs = await enrichRuns(supabase, (data ?? []) as DbRunRow[], auth.sub);
+      const runs = await enrichRuns(supabase, (data ?? []) as DbRunRow[], auth.sub, listQuery.lite);
       return res.status(200).json({ runs });
     }
 

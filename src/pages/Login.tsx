@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Footprints, ArrowRight, IdCard, Lock } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { normalizeEmployeeId } from "@/lib/employee-id";
 import { APP_VERSION } from "@/lib/version";
-import { Button, Field, Input } from "@/components/ui";
+import { Button, Field, Input, PasswordInput } from "@/components/ui";
 
 export default function Login() {
   const { login, user, loading: authLoading } = useAuth();
@@ -28,7 +29,7 @@ export default function Login() {
       return;
     }
     if (res.needsPassword) {
-      navigate(`/set-password?employee_id=${encodeURIComponent(id.trim())}`, { replace: true });
+      navigate(`/set-password?employee_id=${encodeURIComponent(normalizeEmployeeId(id))}`, { replace: true });
       return;
     }
     setError(res.error);
@@ -118,9 +119,8 @@ export default function Login() {
             <Field label="รหัสผ่าน" required htmlFor="password">
               <div className="relative">
                 <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground" />
-                <Input
+                <PasswordInput
                   id="password"
-                  type="password"
                   autoComplete="current-password"
                   placeholder="รหัสผ่าน 4–30 ตัวอักษร"
                   className="pl-11"
@@ -145,6 +145,11 @@ export default function Login() {
               เข้าใช้งานครั้งแรก?{" "}
               <Link to="/set-password" className="font-medium text-primary hover:underline">
                 สร้างรหัสผ่าน
+              </Link>
+            </p>
+            <p className="text-center text-sm text-muted-foreground">
+              <Link to="/change-password" className="font-medium text-primary hover:underline">
+                เปลี่ยนรหัสผ่าน
               </Link>
             </p>
           </form>

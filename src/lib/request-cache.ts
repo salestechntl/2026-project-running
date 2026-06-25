@@ -59,6 +59,14 @@ export function cacheKeyRuns(employeeId: string): string {
   return `runs:${employeeId}`;
 }
 
+export function cacheKeyRunHistory(employeeId: string, page: number, limit: number): string {
+  return `runs:history:${employeeId}:${page}:${limit}`;
+}
+
+export function cacheKeyWeightsLite(employeeId: string): string {
+  return `weights:lite:${employeeId}`;
+}
+
 export function cacheKeyWeights(employeeId: string): string {
   return `weights:${employeeId}`;
 }

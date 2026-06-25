@@ -7,7 +7,7 @@ import { approvalFieldsForStatus } from "../_lib/entries/approval-fields.js";
 import { canActorApprove, canActorReject } from "../_lib/entries/status.js";
 import { expireEntryIfStale } from "../_lib/entries/expire.js";
 import { attachRunImages } from "../_lib/entries/attach-run-images.js";
-import { isRunDateAllowed } from "../_lib/entries/run-date-bounds.js";
+import { isRunDateAllowed, isStaffRunDateAllowed } from "../_lib/entries/run-date-bounds.js";
 import { loadAttachmentViews, snapshotEntry } from "../_lib/storage/attachments.js";
 import {
   isStaffEditableStatus,
@@ -41,6 +41,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const row = existing as DbRunRow;
+
+    const allowed = await canAccessEmployee(supabase, auth.sub, row.employee_id, auth);
+    if (!allowed) return res.status(403).json({ error: "ไม่มีสิทธิ์ดูข้อมูลนี้" });
+
+    if (req.method === "GET") {
+      let current = row;
+      const expired = await expireEntryIfStale(supabase, "run_entries", "run", row);
+      if (expired) {
+        const { data: refreshed } = await supabase.from("run_entries").select("*").eq("id", id).maybeSingle();
+        if (refreshed) current = refreshed as DbRunRow;
+      }
+      const views = await loadAttachmentViews(supabase, "run", [current.id]);
+      return res.status(200).json({ run: mapRun(current, views.get(current.id)) });
+    }
 
     if (req.method === "DELETE") {
       if (row.employee_id !== auth.sub) {
@@ -117,7 +131,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!runDate || !/^\d{4}-\d{2}-\d{2}$/.test(runDate)) {
           return res.status(400).json({ error: "วันที่ไม่ถูกต้อง" });
         }
-        if (!isRunDateAllowed(runDate, undefined, row.run_date)) {
+        if (!isStaffRunDateAllowed(runDate, undefined, row.run_date)) {
           return res.status(400).json({ error: "วันที่อยู่นอกช่วงที่อนุญาตให้บันทึก" });
         }
         if (runType !== "discipline" && runType !== "mission") {

@@ -66,6 +66,24 @@ export async function apiSetPassword(employeeId: string, password: string): Prom
   if (!res.ok) throw new Error(await parseError(res));
 }
 
+export async function apiChangePassword(
+  employeeId: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "change_password",
+      employee_id: employeeId,
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  });
+  if (!res.ok) throw await parseApiError(res);
+}
+
 export async function apiMe(): Promise<MeResponse> {
   const res = await fetch("/api/auth/me", { headers: authHeaders() });
   if (!res.ok) throw new Error(await parseError(res));
@@ -111,6 +129,36 @@ export async function apiFetchRuns(employeeId?: string): Promise<RunEntry[]> {
   if (!res.ok) throw new Error(await parseError(res));
   const data = (await res.json()) as { runs: RunEntry[] };
   return data.runs;
+}
+
+export interface RunHistoryPage {
+  runs: RunEntry[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export async function apiFetchRunHistory(
+  employeeId: string,
+  page: number,
+  limit: number,
+): Promise<RunHistoryPage> {
+  const params = new URLSearchParams({
+    employee_id: employeeId,
+    page: String(page),
+    limit: String(limit),
+    lite: "1",
+  });
+  const res = await fetch(`/api/runs?${params}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await parseError(res));
+  return (await res.json()) as RunHistoryPage;
+}
+
+export async function apiFetchRunById(id: string): Promise<RunEntry> {
+  const res = await fetch(`/api/runs/${encodeURIComponent(id)}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await parseError(res));
+  const data = (await res.json()) as { run: RunEntry };
+  return data.run;
 }
 
 export async function apiSaveRun(
@@ -216,8 +264,11 @@ export async function apiStaffEditRun(
   return data.run;
 }
 
-export async function apiFetchWeights(employeeId?: string): Promise<WeightEntry[]> {
-  const q = employeeId ? `?employee_id=${encodeURIComponent(employeeId)}` : "";
+export async function apiFetchWeights(employeeId?: string, opts?: { lite?: boolean }): Promise<WeightEntry[]> {
+  const params = new URLSearchParams();
+  if (employeeId) params.set("employee_id", employeeId);
+  if (opts?.lite) params.set("lite", "1");
+  const q = params.toString() ? `?${params}` : "";
   const res = await fetch(`/api/weights${q}`, { headers: authHeaders() });
   if (!res.ok) throw new Error(await parseError(res));
   const data = (await res.json()) as { weights: WeightEntry[] };

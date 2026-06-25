@@ -1,3 +1,5 @@
+import { normalizeEmployeeId } from "../employees/normalize-id.js";
+
 /** CSV row for org chart import */
 
 export interface OrgRow {
@@ -74,12 +76,12 @@ export function parseOrgCsv(text: string): OrgParseResult {
     const cells = parseCsvLine(lines[i]);
     const get = (key: typeof HEADERS[number]) => cells[colIndex.get(key)!] ?? "";
 
-    const employee_id = get("employee_id").trim();
+    const employee_id = normalizeEmployeeId(get("employee_id"));
     const name = get("name").trim();
     const position = get("position").trim();
     const department = get("department").trim();
     const managerRaw = get("manager_id").trim();
-    const manager_id = managerRaw || null;
+    const manager_id = managerRaw ? normalizeEmployeeId(managerRaw) : null;
 
     if (!employee_id) {
       errors.push({ row: lineNum, employee_id: "", message: "ไม่มีรหัสพนักงาน" });
@@ -104,7 +106,10 @@ export function parseOrgCsv(text: string): OrgParseResult {
 /** Validate manager references and circular reporting */
 export function validateOrgRows(rows: OrgRow[], existingIds: Set<string> = new Set()): OrgRowError[] {
   const errors: OrgRowError[] = [];
-  const ids = new Set([...existingIds, ...rows.map((r) => r.employee_id)]);
+  const ids = new Set([
+    ...[...existingIds].map(normalizeEmployeeId),
+    ...rows.map((r) => r.employee_id),
+  ]);
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];

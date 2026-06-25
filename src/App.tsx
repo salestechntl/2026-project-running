@@ -8,6 +8,7 @@ import { useRejectedEntryCount } from "@/lib/hooks/useEntries";
 import { AppShell, type NavItem } from "@/components/AppShell";
 import Login from "@/pages/Login";
 import SetPassword from "@/pages/SetPassword";
+import ChangePassword from "@/pages/ChangePassword";
 import Home from "@/pages/Home";
 import LogEntry from "@/pages/LogEntry";
 import Dashboard from "@/pages/Dashboard";
@@ -114,6 +115,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/set-password" element={<SetPassword />} />
+        <Route path="/change-password" element={<ChangePassword />} />
         <Route path="/app" element={<ProtectedLayout />}>
           <Route index element={<Home />} />
           <Route path="log" element={<LogEntry />} />

@@ -8,9 +8,10 @@ import {
 import { useAuth } from "@/lib/auth";
 import {
   MONTHLY_MISSIONS, currentMonthKey, todayISOEffective, monthOf, isMonthUnlocked,
-  missionName, monthLabel, monthLabelEN,
-  weightWindow, END_WEIGHT_GRACE_DAYS, runDateSelectionBounds,
-  weightMonthOptions, weightMonthFieldHint,
+  missionName, monthLabel,
+  weightWindow, runDateSelectionBounds, runDateFieldHint, runDateOptionLabel,
+  weightCardEditable, weightCanResubmitRejected, weightCanEditPending, weightBlockedByRejected,
+  startWeightTargetMonth, endWeightTargetMonth,
 } from "@/lib/missions";
 import { saveRunEntryWithProgress } from "@/lib/save-run";
 import { saveWeightEntryWithProgress } from "@/lib/save-weight";
@@ -19,11 +20,13 @@ import { SaveProgressDialog } from "@/components/SaveProgressDialog";
 import { DATA_CHANGED_EVENT } from "@/lib/store";
 import {
   deleteRunEntry,
+  fetchRunById,
+  RUN_HISTORY_PAGE_SIZE,
   ENTRY_STATUS_LABEL,
   RUN_TYPE_LABEL,
   type RunEntry, type RunType, type WeightPeriod, type WeightEntry, type EntryStatus,
 } from "@/lib/entries";
-import { useRuns, useWeights } from "@/lib/hooks/useEntries";
+import { useRunHistory, useWeights } from "@/lib/hooks/useEntries";
 import { pad2, formatThaiDate, formatDurationThai, formatThaiDateTime } from "@/lib/utils";
 import { Button, Card, Field, Input, Select, Badge, ConfirmDialog, LoadingBlock } from "@/components/ui";
 import { ImageUpload, ImageUploadMulti } from "@/components/ImageUpload";
@@ -33,12 +36,9 @@ import { cn } from "@/lib/utils";
 type Tab = "run" | "weight";
 const CAMPAIGN_MIN = `${MONTHLY_MISSIONS[0].month}-01`;
 
-function runDateFieldHint(min: string, max: string): string {
-  const day = parseInt(max.slice(8, 10), 10);
-  const grace = day <= 7;
-  return grace
-    ? `วันที่ 1–7 ของเดือน: เลือกได้ตั้งแต่ ${formatThaiDate(min)} ถึงวันนี้`
-    : `เลือกได้ตั้งแต่ ${formatThaiDate(min)} ถึงวันนี้`;
+function initialRunDate(bounds: { min: string; max: string }, existing?: string): string {
+  if (existing && existing >= bounds.min && existing <= bounds.max) return existing;
+  return bounds.max;
 }
 
 /** เจ้าตัวแก้รายการนี้ได้ไหม */
@@ -185,7 +185,6 @@ function RunTab() {
   const [formSeed, setFormSeed] = useState(0);
   const [toast, setToast] = useState<string>();
   const historyRef = useRef<HTMLDivElement>(null);
-  const { runs, loading: runsLoading, refresh } = useRuns(user?.id);
 
   if (!user) return null;
 
@@ -209,17 +208,14 @@ function RunTab() {
         onSaved={async (edit) => {
           setEditing(null);
           if (!edit) setFormSeed((n) => n + 1);
-          await refresh();
           flash(edit ? "แก้ไขรายการเรียบร้อยแล้ว" : "บันทึกการวิ่งเรียบร้อยแล้ว 🎉");
         }}
       />
       {toast && <SuccessBanner>{toast}</SuccessBanner>}
       <RunHistory
         ref={historyRef}
-        runs={runs}
-        loading={runsLoading}
+        employeeId={user.id}
         onEdit={(r) => setEditing(r)}
-        onDeleted={() => void refresh()}
       />
     </div>
   );
@@ -236,13 +232,8 @@ function RunForm({
 }) {
   const { user } = useAuth();
   const init = editing;
-  const { min: runDateMin, max: runDateMax } = runDateSelectionBounds(CAMPAIGN_MIN, init?.date);
-  const [date, setDate] = useState(() => {
-    const d = init?.date ?? runDateMax;
-    if (d < runDateMin) return runDateMin;
-    if (d > runDateMax) return runDateMax;
-    return d;
-  });
+  const { min: runDateMin, max: runDateMax } = runDateSelectionBounds(CAMPAIGN_MIN);
+  const [date, setDate] = useState(() => initialRunDate({ min: runDateMin, max: runDateMax }, init?.date));
   const [runType, setRunType] = useState<RunType>(init?.runType ?? "discipline");
   const [distance, setDistance] = useState(init ? String(init.distanceKm) : "");
   const [h, setH] = useState(init ? String(Math.floor(init.durationSec / 3600)) : "");
@@ -297,7 +288,7 @@ function RunForm({
   function collectValidationErrors(): Record<string, string> {
     const e: Record<string, string> = {};
     if (!date) e.date = "เลือกวันที่วิ่ง";
-    else if (date < runDateMin || date > runDateMax) e.date = "วันที่อยู่นอกช่วงที่อนุญาต";
+    else if (date < runDateMin || date > runDateMax) e.date = "เลือกได้เฉพาะวันนี้และเมื่อวาน";
     if (!dist || dist <= 0) e.distance = "กรอกระยะทางมากกว่า 0";
     if (!(Number(h) || Number(m) || Number(s))) e.time = "กรอกเวลาที่ใช้";
     if (images.length === 0) e.image = "แนบภาพกิจกรรมอย่างน้อย 1 รูป";
@@ -389,13 +380,14 @@ function RunForm({
             required
             htmlFor="date"
             error={errors.date}
-            hint={runDateFieldHint(runDateMin, runDateMax)}
+            hint={runDateFieldHint()}
           >
             <DateSelect
               id="date"
               value={date}
               min={runDateMin}
               max={runDateMax}
+              formatOption={runDateOptionLabel}
               onChange={setDate}
             />
           </Field>
@@ -478,51 +470,45 @@ function RunForm({
 
 const RunHistory = forwardRef(function RunHistory(
   {
-    runs,
-    loading,
+    employeeId,
     onEdit,
-    onDeleted,
   }: {
-    runs: RunEntry[];
-    loading?: boolean;
+    employeeId: string;
     onEdit: (r: RunEntry) => void;
-    onDeleted: () => void;
   },
   ref: ForwardedRef<HTMLDivElement>,
 ) {
   const { isLead, isChecker } = useAuth();
   const canSelfManage = isLead || isChecker;
   const [confirmId, setConfirmId] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
+  const [editLoadingId, setEditLoadingId] = useState<string | null>(null);
+  const { runs, total, page, loading, goToPage } = useRunHistory(employeeId);
 
-  const sortedRuns = useMemo(
-    () => [...runs].sort((a, b) => b.createdAt - a.createdAt),
-    [runs],
-  );
-  const totalPages = Math.max(1, Math.ceil(sortedRuns.length / HISTORY_PAGE_SIZE));
-
-  useEffect(() => {
-    setPage((p) => Math.min(p, totalPages));
-  }, [sortedRuns.length, totalPages]);
-
-  const pageRuns = useMemo(() => {
-    const start = (page - 1) * HISTORY_PAGE_SIZE;
-    return sortedRuns.slice(start, start + HISTORY_PAGE_SIZE);
-  }, [sortedRuns, page]);
+  async function handleEdit(run: RunEntry) {
+    setEditLoadingId(run.id);
+    try {
+      const full = await fetchRunById(run.id);
+      onEdit(full);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setEditLoadingId(null);
+    }
+  }
 
   return (
     <div ref={ref} className="scroll-mt-6 animate-fade-up">
       <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         ประวัติการบันทึกของฉัน
       </h2>
-      <Card className={!loading && sortedRuns.length > 0 ? "divide-y divide-border overflow-hidden" : undefined}>
+      <Card className={!loading && total > 0 ? "divide-y divide-border overflow-hidden" : undefined}>
         {loading ? (
           <LoadingBlock compact label="กำลังโหลดประวัติ…" />
-        ) : sortedRuns.length === 0 ? (
+        ) : total === 0 ? (
           <p className="p-8 text-center text-sm text-muted-foreground">ยังไม่มีการบันทึกการวิ่ง</p>
         ) : (
           <>
-            {pageRuns.map((r) => {
+            {runs.map((r) => {
           const editable = canOwnerEditRun(r.status, canSelfManage);
           const deletable = canOwnerDeleteRun(r.status);
           return (
@@ -550,8 +536,9 @@ const RunHistory = forwardRef(function RunHistory(
                   {editable ? (
                     <>
                       <button
-                        onClick={() => onEdit(r)}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-primary"
+                        onClick={() => void handleEdit(r)}
+                        disabled={editLoadingId === r.id}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-primary disabled:opacity-50"
                         aria-label="แก้ไข"
                       >
                         <Pencil className="h-4 w-4" />
@@ -602,8 +589,9 @@ const RunHistory = forwardRef(function RunHistory(
         })}
             <HistoryPagination
               page={page}
-              totalItems={sortedRuns.length}
-              onPageChange={setPage}
+              totalItems={total}
+              pageSize={RUN_HISTORY_PAGE_SIZE}
+              onPageChange={goToPage}
             />
           </>
         )}
@@ -619,7 +607,6 @@ const RunHistory = forwardRef(function RunHistory(
           if (confirmId) {
             try {
               await deleteRunEntry(confirmId);
-              onDeleted();
             } catch (e) {
               console.error(e);
             }
@@ -639,22 +626,24 @@ const WEIGHT_PERIOD_LABEL: Record<WeightPeriod, string> = {
 
 const rejectedNoteClass = "rounded-md bg-danger/10 px-3 py-2 text-xs text-danger";
 const staffEditNoteClass = "rounded-md bg-primary/10 px-3 py-2 text-xs text-primary";
-const HISTORY_PAGE_SIZE = 5;
+const HISTORY_PAGE_SIZE = RUN_HISTORY_PAGE_SIZE;
 
 function HistoryPagination({
   page,
   totalItems,
+  pageSize,
   onPageChange,
 }: {
   page: number;
   totalItems: number;
+  pageSize: number;
   onPageChange: (page: number) => void;
 }) {
-  const totalPages = Math.max(1, Math.ceil(totalItems / HISTORY_PAGE_SIZE));
-  if (totalItems <= HISTORY_PAGE_SIZE) return null;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  if (totalItems <= pageSize) return null;
 
-  const from = (page - 1) * HISTORY_PAGE_SIZE + 1;
-  const to = Math.min(page * HISTORY_PAGE_SIZE, totalItems);
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, totalItems);
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3">
@@ -692,39 +681,23 @@ function HistoryPagination({
 
 function WeightTab({ onSaved }: { onSaved: (p: WeightPeriod) => void }) {
   const { user } = useAuth();
-  const { weights: allWeights, loading: weightsLoading, refresh } = useWeights(user?.id);
+  const { weights: allWeights, loading: weightsLoading, refresh } = useWeights(user?.id, undefined, { lite: true });
   const startCardRef = useRef<HTMLDivElement>(null);
   const endCardRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
   const [scrollToPeriod, setScrollToPeriod] = useState<WeightPeriod | null>(null);
 
-  const campaignStart = MONTHLY_MISSIONS[0].month;
-
-  const monthOptions = useMemo(() => {
-    const extra = allWeights
-      .filter((w) => w.status === "rejected")
-      .map((w) => w.month);
-    return weightMonthOptions(campaignStart, extra);
-  }, [allWeights, campaignStart]);
-
-  const [month, setMonth] = useState(() => currentMonthKey());
+  const startMonth = startWeightTargetMonth();
+  const endMonth = endWeightTargetMonth();
   const didAutoFocusRejected = useRef(false);
-
-  useEffect(() => {
-    if (monthOptions.length === 0) return;
-    if (!monthOptions.includes(month)) {
-      setMonth(currentMonthKey());
-    }
-  }, [monthOptions, month]);
 
   useEffect(() => {
     if (didAutoFocusRejected.current) return;
     const rejected = allWeights
-      .filter((w) => w.status === "rejected")
+      .filter((w) => w.status === "rejected" && weightCanResubmitRejected(w.month, w.period))
       .sort((a, b) => b.month.localeCompare(a.month) || b.updatedAt - a.updatedAt);
     if (rejected.length === 0) return;
     didAutoFocusRejected.current = true;
-    setMonth(rejected[0].month);
     setScrollToPeriod(rejected[0].period);
   }, [allWeights]);
 
@@ -736,19 +709,23 @@ function WeightTab({ onSaved }: { onSaved: (p: WeightPeriod) => void }) {
       setScrollToPeriod(null);
     }, 120);
     return () => window.clearTimeout(timer);
-  }, [scrollToPeriod, month]);
+  }, [scrollToPeriod]);
 
-  const existing = useMemo(
-    () => allWeights.filter((w) => w.month === month),
-    [allWeights, month],
+  const startExisting = useMemo(
+    () => allWeights.filter((w) => w.month === startMonth),
+    [allWeights, startMonth],
+  );
+  const endExisting = useMemo(
+    () => allWeights.filter((w) => w.month === endMonth),
+    [allWeights, endMonth],
   );
 
-  const rejectedCount = allWeights.filter((w) => w.status === "rejected").length;
+  const rejectedStart = startExisting.some((w) => w.period === "start" && w.status === "rejected");
+  const rejectedEnd = endExisting.some((w) => w.period === "end" && w.status === "rejected");
 
   if (!user) return null;
 
   function openWeightEdit(w: WeightEntry) {
-    setMonth(w.month);
     setScrollToPeriod(w.period);
   }
 
@@ -756,61 +733,58 @@ function WeightTab({ onSaved }: { onSaved: (p: WeightPeriod) => void }) {
     <div className="animate-fade-up space-y-4">
       <MissionTimeline />
 
-      {rejectedCount > 0 && (
+      {(rejectedStart || rejectedEnd) && (
         <div
           role="alert"
           className="flex items-start gap-2.5 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-[hsl(32_80%_34%)]"
         >
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
           <div>
-            <p className="font-semibold">มีรายการน้ำหนักที่ไม่ผ่าน {rejectedCount} รายการ</p>
+            <p className="font-semibold">มีรายการน้ำหนักที่ไม่ผ่าน</p>
             <p className="mt-0.5 text-xs opacity-90">
-              กรุณาส่งรายการใหม่ในช่วงเวลาที่เปิดรับ — เลือกเดือนด้านล่างหรือกดส่งใหม่จากประวัติ
+              {rejectedStart && rejectedEnd
+                ? "ต้นเดือนส่งใหม่ได้เฉพาะวันที่ 1 — สิ้นเดือนส่งใหม่ได้ในช่วงวันสุดท้ายของเดือนและวันที่ 1 เดือนถัดไป"
+                : rejectedStart
+                  ? "น้ำหนักต้นเดือนที่ไม่ผ่านแล้วส่งใหม่ได้เฉพาะวันที่ 1 ของเดือน"
+                  : "น้ำหนักสิ้นเดือนที่ไม่ผ่านแล้วส่งใหม่ได้ในช่วงวันสุดท้ายของเดือนและวันที่ 1 เดือนถัดไป"}
             </p>
           </div>
         </div>
       )}
 
-      <Card className="space-y-5 p-6">
+      <Card className="p-6">
         <IdentityRow />
-        <Field label="เดือนที่บันทึก" required htmlFor="month" hint={`${weightMonthFieldHint()} · กรอกน้ำหนัก 2 ครั้ง: ต้นเดือน และสิ้นเดือน`}>
-          <Select
-            id="month"
-            value={monthOptions.includes(month) ? month : (monthOptions[0] ?? "")}
-            onChange={(e) => setMonth(e.target.value)}
-            disabled={monthOptions.length === 0}
-          >
-            {monthOptions.length === 0 ? (
-              <option value="">ยังไม่เปิดรับบันทึก</option>
-            ) : (
-              monthOptions.map((m) => (
-                <option key={m} value={m}>{monthLabelEN(m)}</option>
-              ))
-            )}
-          </Select>
-        </Field>
       </Card>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {(["start", "end"] as WeightPeriod[]).map((period) => (
-          <div
-            key={`${month}-${period}`}
-            ref={period === "start" ? startCardRef : endCardRef}
-            className="scroll-mt-28"
-          >
-            <WeightCard
-              key={`${month}-${period}-${existing.find((w) => w.period === period && w.status === "pending")?.id ?? "new"}-${existing.find((w) => w.period === period && w.status === "pending")?.updatedAt ?? 0}`}
-              employeeId={user.id}
-              month={month}
-              period={period}
-              initial={existing.find((w) => w.period === period && w.status === "pending")}
-              onSaved={() => {
-                void refresh();
-                onSaved(period);
-              }}
-            />
-          </div>
-        ))}
+        <div ref={startCardRef} className="scroll-mt-28">
+          <WeightCard
+            key={`${startMonth}-start-${startExisting.find((w) => w.period === "start" && w.status === "pending")?.id ?? "new"}-${startExisting.find((w) => w.period === "start" && w.status === "pending")?.updatedAt ?? 0}`}
+            employeeId={user.id}
+            month={startMonth}
+            period="start"
+            initial={startExisting.find((w) => w.period === "start" && w.status === "pending")}
+            blockedByRejected={weightBlockedByRejected(startMonth, "start", startExisting)}
+            onSaved={() => {
+              void refresh();
+              onSaved("start");
+            }}
+          />
+        </div>
+        <div ref={endCardRef} className="scroll-mt-28">
+          <WeightCard
+            key={`${endMonth}-end-${endExisting.find((w) => w.period === "end" && w.status === "pending")?.id ?? "new"}-${endExisting.find((w) => w.period === "end" && w.status === "pending")?.updatedAt ?? 0}`}
+            employeeId={user.id}
+            month={endMonth}
+            period="end"
+            initial={endExisting.find((w) => w.period === "end" && w.status === "pending")}
+            blockedByRejected={weightBlockedByRejected(endMonth, "end", endExisting)}
+            onSaved={() => {
+              void refresh();
+              onSaved("end");
+            }}
+          />
+        </div>
       </div>
 
       <WeightHistory
@@ -878,7 +852,7 @@ const WeightHistory = forwardRef(function WeightHistory(
                   อัปเดตล่าสุด {formatThaiDateTime(w.updatedAt)}
                 </p>
               </div>
-              {w.status === "pending" && (
+              {w.status === "pending" && weightCanEditPending(w.month, w.period) && (
                 <button
                   type="button"
                   onClick={() => onEdit(w)}
@@ -888,7 +862,7 @@ const WeightHistory = forwardRef(function WeightHistory(
                   แก้ไข
                 </button>
               )}
-              {w.status === "rejected" && weightWindow(w.month, w.period).open && (
+              {w.status === "rejected" && weightCanResubmitRejected(w.month, w.period) && (
                 <button
                   type="button"
                   onClick={() => onEdit(w)}
@@ -919,6 +893,7 @@ const WeightHistory = forwardRef(function WeightHistory(
             <HistoryPagination
               page={page}
               totalItems={sorted.length}
+              pageSize={HISTORY_PAGE_SIZE}
               onPageChange={setPage}
             />
           </>
@@ -933,16 +908,16 @@ function WeightCard({
   month,
   period,
   initial,
+  blockedByRejected = false,
   onSaved,
 }: {
   employeeId: string;
   month: string;
   period: WeightPeriod;
   initial?: WeightEntry;
+  blockedByRejected?: boolean;
   onSaved: () => void;
 }) {
-  const { isLead, isChecker } = useAuth();
-  const canSelfManage = isLead || isChecker;
   const [weight, setWeight] = useState(initial ? String(initial.weightKg) : "");
   const [image, setImage] = useState<string | undefined>(initial?.proofImage);
   const [imageRef, setImageRef] = useState<string | undefined>(initial?.proofImageRef);
@@ -954,7 +929,6 @@ function WeightCard({
   const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
 
   const label = period === "start" ? "ต้นเดือน" : "สิ้นเดือน";
-  const isPending = initial?.status === "pending";
 
   useEffect(() => {
     if (initial) {
@@ -971,7 +945,8 @@ function WeightCard({
   }, [initial?.id, initial?.updatedAt, initial?.weightKg, initial?.proofImage, initial?.proofImageRef, initial]);
 
   const win = weightWindow(month, period);
-  const editable = canSelfManage ? win.open : win.open && (isPending || !initial);
+  const isPending = initial?.status === "pending";
+  const editable = weightCardEditable(month, period, initial, blockedByRejected);
   const disabled = !editable;
 
   function patchProgress(stepId: WeightSaveStepId, status: SaveStepStatus, detail?: string) {
@@ -1058,12 +1033,15 @@ function WeightCard({
   return (
     <>
     <Card className="flex flex-col gap-4 p-5">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Scale className="h-[18px] w-[18px]" />
           </span>
-          <h3 className="font-semibold text-foreground">น้ำหนัก{label}</h3>
+          <div className="min-w-0">
+            <h3 className="font-semibold text-foreground">น้ำหนัก{label}</h3>
+            <p className="text-xs text-muted-foreground">เดือนที่บันทึก: {monthLabel(month)}</p>
+          </div>
         </div>
         {isPending ? (
           <Badge tone="warning"><AlertTriangle className="h-3 w-3" /> {ENTRY_STATUS_LABEL.pending}</Badge>
@@ -1071,17 +1049,36 @@ function WeightCard({
       </div>
 
       {disabled ? (
-        todayISOEffective() < win.opensISO ? (
+        blockedByRejected ? (
+          <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-[hsl(32_80%_34%)]">
+            <p className="flex items-center gap-1.5 font-semibold">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> ส่งใหม่ไม่ได้ในขณะนี้
+            </p>
+            <p className="mt-0.5 pl-5">
+              {period === "start"
+                ? "น้ำหนักต้นเดือนที่ไม่ผ่านแล้วส่งใหม่ได้เฉพาะวันที่ 1 ของเดือน"
+                : "น้ำหนักสิ้นเดือนที่ไม่ผ่านแล้วส่งใหม่ได้เฉพาะวันสุดท้ายของเดือนและวันที่ 1 เดือนถัดไป"}
+            </p>
+          </div>
+        ) : todayISOEffective() < win.opensISO ? (
           <p className="flex items-start gap-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
             <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>ยังไม่ถึงเวลากรอก — เปิดให้กรอก {formatThaiDate(win.opensISO)} ถึง {formatThaiDate(win.closesISO)}</span>
+            <span>
+              {period === "start"
+                ? `ยังไม่ถึงเวลากรอก — เปิดให้บันทึกวันที่ ${formatThaiDate(win.opensISO)} เท่านั้น`
+                : `ยังไม่ถึงเวลากรอก — เปิดให้กรอก ${formatThaiDate(win.opensISO)} ถึง ${formatThaiDate(win.closesISO)}`}
+            </span>
           </p>
         ) : (
           <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-[hsl(32_80%_34%)]">
             <p className="flex items-center gap-1.5 font-semibold">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> เลยกำหนดแล้ว
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {isPending ? "แก้ไขไม่ได้แล้ว" : "ปิดรับบันทึกใหม่แล้ว"}
             </p>
-            <p className="mt-0.5 pl-5">ปิดรับน้ำหนัก{label}เมื่อ {formatThaiDate(win.closesISO)}</p>
+            <p className="mt-0.5 pl-5">
+              {period === "start"
+                ? `บันทึกและแก้ไขน้ำหนักต้นเดือนได้เฉพาะวันที่ 1 ของเดือน (${formatThaiDate(win.opensISO)})`
+                : `ปิดรับน้ำหนักสิ้นเดือนเมื่อ ${formatThaiDate(win.closesISO)}`}
+            </p>
           </div>
         )
       ) : win.backdated ? (
@@ -1091,7 +1088,7 @@ function WeightCard({
             จบเดือนแล้ว · กรอกย้อนหลัง
           </p>
           <p className="mt-0.5 pl-5">
-            กรอกน้ำหนัก{label}ย้อนหลังได้อีก {win.daysLeft} วัน — ภายใน {formatThaiDate(win.closesISO)}
+            กรอกน้ำหนัก{label}ของเดือนก่อนหน้า — ภายใน {formatThaiDate(win.closesISO)}
           </p>
         </div>
       ) : (
@@ -1099,8 +1096,8 @@ function WeightCard({
           <Calendar className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
           <span>
             {period === "start"
-              ? `กรอกน้ำหนักต้นเดือนได้ตั้งแต่วันแรกของเดือน และไม่เกิน ${END_WEIGHT_GRACE_DAYS} วันหลังจบเดือน`
-              : `กรอกน้ำหนักสิ้นเดือนได้ตั้งแต่วันสุดท้ายของเดือน และไม่เกิน ${END_WEIGHT_GRACE_DAYS} วันหลังจบเดือน`}
+              ? "บันทึกน้ำหนักต้นเดือนได้เฉพาะวันที่ 1 ของเดือน"
+              : `กรอกน้ำหนักสิ้นเดือนได้ ${formatThaiDate(win.opensISO)} ถึง ${formatThaiDate(win.closesISO)}`}
           </span>
         </p>
       )}

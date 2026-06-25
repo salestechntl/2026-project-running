@@ -1,5 +1,5 @@
-import { forwardRef, useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from "react";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { forwardRef, useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from "react";
+import { AlertTriangle, Eye, EyeOff, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /* ---------------- Button ---------------- */
@@ -99,6 +99,39 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   ),
 );
 Input.displayName = "Input";
+
+/* ---------------- PasswordInput (toggle visibility) ---------------- */
+export const PasswordInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
+  ({ className, ...props }, ref) => {
+    const [visible, setVisible] = useState(false);
+
+    return (
+      <div className="relative">
+        <Input
+          ref={ref}
+          type={visible ? "text" : "password"}
+          className={cn("pr-11", className)}
+          {...props}
+        />
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={visible ? "ซ่อนรหัสผ่าน" : "แสดงรหัสผ่าน"}
+          aria-pressed={visible}
+          className={cn(
+            "absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg",
+            "text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25",
+          )}
+          onClick={() => setVisible((v) => !v)}
+        >
+          {visible ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
+        </button>
+      </div>
+    );
+  },
+);
+PasswordInput.displayName = "PasswordInput";
 
 /* ---------------- Select ---------------- */
 export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(
@@ -219,6 +252,110 @@ export function ConfirmDialog({
         <div className="mt-6 flex justify-end gap-2.5">
           <Button variant="outline" onClick={onCancel}>{cancelLabel}</Button>
           <Button variant={tone === "danger" ? "danger" : "primary"} onClick={onConfirm}>{confirmLabel}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- RejectReasonDialog ---------------- */
+export function RejectReasonDialog({
+  open,
+  title = "ยืนยันไม่ผ่านรายการ",
+  message,
+  confirmLabel = "ไม่ผ่าน",
+  cancelLabel = "ยกเลิก",
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title?: string;
+  message?: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  busy?: boolean;
+  onConfirm: (reason: string) => void;
+  onCancel: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string>();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setReason("");
+    setError(undefined);
+    const timer = window.setTimeout(() => textareaRef.current?.focus(), 50);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onCancel]);
+
+  if (!open) return null;
+
+  function handleConfirm() {
+    const trimmed = reason.trim();
+    if (!trimmed) {
+      setError("กรุณาระบุเหตุผลที่ไม่ผ่าน");
+      textareaRef.current?.focus();
+      return;
+    }
+    onConfirm(trimmed);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+    >
+      <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm animate-fade-up" onClick={busy ? undefined : onCancel} />
+      <div className="relative w-full max-w-md animate-scale-in rounded-2xl border border-border bg-card p-6 shadow-xl">
+        <div className="flex items-start gap-3.5">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-danger/10 text-danger">
+            <AlertTriangle className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <h3 className="text-base font-bold text-foreground">{title}</h3>
+            {message && <div className="mt-1 text-sm text-muted-foreground">{message}</div>}
+          </div>
+        </div>
+        <div className="mt-5">
+          <Field label="เหตุผลที่ไม่ผ่าน" required error={error} htmlFor="reject-reason">
+            <textarea
+              ref={textareaRef}
+              id="reject-reason"
+              rows={3}
+              value={reason}
+              disabled={busy}
+              placeholder="ระบุเหตุผลที่ไม่ผ่าน"
+              onChange={(e) => {
+                setReason(e.target.value);
+                if (error) setError(undefined);
+              }}
+              className={cn(
+                "w-full resize-y rounded-xl border border-input bg-card px-3.5 py-2.5 text-[15px] text-foreground shadow-xs transition-colors",
+                "placeholder:text-muted-foreground/70",
+                "focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25",
+                "disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground",
+              )}
+            />
+          </Field>
+        </div>
+        <div className="mt-6 flex justify-end gap-2.5">
+          <Button variant="outline" onClick={onCancel} disabled={busy}>{cancelLabel}</Button>
+          <Button variant="danger" onClick={handleConfirm} disabled={busy}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : confirmLabel}
+          </Button>
         </div>
       </div>
     </div>

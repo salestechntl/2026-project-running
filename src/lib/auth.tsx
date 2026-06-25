@@ -1,12 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { findEmployee, isChecker as employeeIsChecker, isSuperAdmin as employeeIsSuperAdmin, isTeamLead } from "./data";
 import { getAuthMode } from "./auth-config";
-import { apiLogin, apiMe, apiSetPassword, ApiError, getStoredToken, setStoredToken } from "./api";
+import { apiLogin, apiMe, apiSetPassword, apiChangePassword, ApiError, getStoredToken, setStoredToken } from "./api";
 import {
   hasLocalPassword,
   setLocalPassword,
+  changeLocalPassword,
   verifyLocalPassword,
 } from "./local-passwords";
+import { normalizeEmployeeId } from "./employee-id";
 import { validatePassword } from "./password";
 import type { Employee } from "./types";
 
@@ -25,6 +27,11 @@ interface AuthState {
   authMode: "api" | "local";
   login: (employeeId: string, password: string) => Promise<LoginResult>;
   setPassword: (employeeId: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  changePassword: (
+    employeeId: string,
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<{ ok: boolean; error?: string; needsPassword?: boolean }>;
   logout: () => void;
 }
 
@@ -95,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [authMode, applyUser, clearSession]);
 
   const login: AuthState["login"] = async (employeeId, password) => {
-    const id = employeeId.trim();
+    const id = normalizeEmployeeId(employeeId);
     if (!id) return { ok: false, error: "กรุณากรอกรหัสพนักงาน" };
     if (!password) return { ok: false, error: "กรุณากรอกรหัสผ่าน" };
 
@@ -139,7 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const setPassword: AuthState["setPassword"] = async (employeeId, password) => {
-    const id = employeeId.trim();
+    const id = normalizeEmployeeId(employeeId);
     if (!id) return { ok: false, error: "กรุณากรอกรหัสพนักงาน" };
     const passwordError = validatePassword(password);
     if (passwordError) return { ok: false, error: passwordError };
@@ -160,11 +167,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const changePassword: AuthState["changePassword"] = async (employeeId, currentPassword, newPassword) => {
+    const id = normalizeEmployeeId(employeeId);
+    if (!id) return { ok: false, error: "กรุณากรอกรหัสพนักงาน" };
+    if (!currentPassword) return { ok: false, error: "กรุณากรอกรหัสผ่านเดิม" };
+
+    const passwordError = validatePassword(newPassword);
+    if (passwordError) return { ok: false, error: passwordError };
+    if (currentPassword === newPassword) {
+      return { ok: false, error: "รหัสผ่านใหม่ต้องไม่ซ้ำรหัสผ่านเดิม" };
+    }
+
+    if (authMode === "local") {
+      const emp = findEmployee(id);
+      if (!emp) return { ok: false, error: "ไม่พบรหัสพนักงานนี้ในระบบ หรือบัญชีถูกปิดใช้งาน" };
+      return changeLocalPassword(id, currentPassword, newPassword);
+    }
+
+    try {
+      await apiChangePassword(id, currentPassword, newPassword);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "PASSWORD_NOT_SET") {
+        return { ok: false, needsPassword: true, error: err.message };
+      }
+      return { ok: false, error: err instanceof Error ? err.message : "ไม่สามารถเปลี่ยนรหัสผ่านได้" };
+    }
+  };
+
   const logout = () => clearSession();
 
   return (
     <AuthContext.Provider
-      value={{ user, isLead, isChecker, isSuperAdmin, loading, authMode, login, setPassword, logout }}
+      value={{ user, isLead, isChecker, isSuperAdmin, loading, authMode, login, setPassword, changePassword, logout }}
     >
       {children}
     </AuthContext.Provider>

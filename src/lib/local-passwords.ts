@@ -1,4 +1,6 @@
 import bcrypt from "bcryptjs";
+import { normalizeEmployeeId } from "./employee-id";
+import { validatePassword } from "./password";
 
 const STORAGE_KEY = "rc2026.passwords";
 
@@ -23,6 +25,23 @@ function writeStore(store: PasswordStore) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
 }
 
+function canonicalKey(employeeId: string): string {
+  return normalizeEmployeeId(employeeId);
+}
+
+/** Migrate legacy mixed-case keys to canonical uppercase. */
+function migrateStoreKeys(store: PasswordStore): PasswordStore {
+  let changed = false;
+  const next: PasswordStore = {};
+  for (const [key, hash] of Object.entries(store)) {
+    const canon = canonicalKey(key);
+    if (canon !== key) changed = true;
+    if (!next[canon]) next[canon] = hash;
+  }
+  if (changed) writeStore(next);
+  return next;
+}
+
 function ensureSeedSuperAdmin(store: PasswordStore): PasswordStore {
   if (store[SEED_SUPER_ADMIN_ID]) return store;
   return {
@@ -31,28 +50,33 @@ function ensureSeedSuperAdmin(store: PasswordStore): PasswordStore {
   };
 }
 
-export function hasLocalPassword(employeeId: string): boolean {
-  const store = ensureSeedSuperAdmin(readStore());
-  if (!readStore()[SEED_SUPER_ADMIN_ID] && store[SEED_SUPER_ADMIN_ID]) {
-    writeStore(store);
+function loadStore(): PasswordStore {
+  const seeded = ensureSeedSuperAdmin(readStore());
+  if (!readStore()[SEED_SUPER_ADMIN_ID] && seeded[SEED_SUPER_ADMIN_ID]) {
+    writeStore(seeded);
   }
-  return Boolean(store[employeeId.trim()]);
+  return migrateStoreKeys(seeded);
+}
+
+export function hasLocalPassword(employeeId: string): boolean {
+  const store = loadStore();
+  return Boolean(store[canonicalKey(employeeId)]);
 }
 
 export function verifyLocalPassword(employeeId: string, password: string): boolean {
-  const id = employeeId.trim();
-  const store = ensureSeedSuperAdmin(readStore());
-  if (!readStore()[SEED_SUPER_ADMIN_ID] && store[SEED_SUPER_ADMIN_ID]) {
-    writeStore(store);
-  }
+  const id = canonicalKey(employeeId);
+  const store = loadStore();
   const hash = store[id];
   if (!hash) return false;
   return bcrypt.compareSync(password, hash);
 }
 
 export function setLocalPassword(employeeId: string, password: string): { ok: true } | { ok: false; error: string } {
-  const id = employeeId.trim();
-  const store = ensureSeedSuperAdmin(readStore());
+  const passwordError = validatePassword(password);
+  if (passwordError) return { ok: false, error: passwordError };
+
+  const id = canonicalKey(employeeId);
+  const store = loadStore();
   if (store[id]) {
     return { ok: false, error: "รหัสพนักงานนี้ตั้งรหัสผ่านแล้ว" };
   }
@@ -62,10 +86,37 @@ export function setLocalPassword(employeeId: string, password: string): { ok: tr
 }
 
 export function resetLocalPassword(employeeId: string, password: string): void {
-  const id = employeeId.trim();
-  const store = ensureSeedSuperAdmin(readStore());
+  const passwordError = validatePassword(password);
+  if (passwordError) throw new Error(passwordError);
+
+  const id = canonicalKey(employeeId);
+  const store = loadStore();
   store[id] = bcrypt.hashSync(password, 10);
   writeStore(store);
+}
+
+export function changeLocalPassword(
+  employeeId: string,
+  currentPassword: string,
+  newPassword: string,
+): { ok: true } | { ok: false; error: string } {
+  const id = canonicalKey(employeeId);
+  if (!hasLocalPassword(id)) {
+    return { ok: false, error: "ยังไม่ได้ตั้งรหัสผ่าน กรุณาสร้างรหัสผ่านก่อน" };
+  }
+  if (!verifyLocalPassword(id, currentPassword)) {
+    return { ok: false, error: "รหัสผ่านเดิมไม่ถูกต้อง" };
+  }
+  const passwordError = validatePassword(newPassword);
+  if (passwordError) return { ok: false, error: passwordError };
+  if (currentPassword === newPassword) {
+    return { ok: false, error: "รหัสผ่านใหม่ต้องไม่ซ้ำรหัสผ่านเดิม" };
+  }
+
+  const store = loadStore();
+  store[id] = bcrypt.hashSync(newPassword, 10);
+  writeStore(store);
+  return { ok: true };
 }
 
 export function localPasswordIsSet(employeeId: string): boolean {

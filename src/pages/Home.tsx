@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { PenLine, BarChart3, Users, ArrowRight, Scale, TrendingUp, Target, CheckCircle2, Circle, Calendar, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
-import { currentMonthKey, missionForMonth, monthLabel, END_WEIGHT_GRACE_DAYS } from "@/lib/missions";
+import { currentMonthKey, missionForMonth, monthLabel } from "@/lib/missions";
 import { useHomeStats } from "@/lib/hooks/useEntries";
 import { Stat, LoadingBlock, Card } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -16,9 +16,7 @@ export default function Home() {
   if (!user) return null;
 
   const weighMonth = stats?.monthKey ?? currentMonthKey();
-  const totalKm = stats?.totalKm ?? 0;
   const monthKm = stats?.monthKm ?? 0;
-  const approvedRunCount = stats?.approvedRunCount ?? 0;
   const monthRunCount = stats?.monthRunCount ?? 0;
   const hasStart = stats?.weightStartDone ?? false;
   const hasEnd = stats?.weightEndDone ?? false;
@@ -111,11 +109,11 @@ export default function Home() {
               <ul className="mt-3 space-y-1">
                 <li className="flex items-start gap-1.5 text-xs text-muted-foreground">
                   <Calendar className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-                  กรอกน้ำหนักต้นเดือนได้ตั้งแต่วันแรกของเดือนและไม่เกิน {END_WEIGHT_GRACE_DAYS} วันหลังจบเดือน
+                  บันทึกน้ำหนักต้นเดือนได้เฉพาะวันที่ 1 ของเดือน
                 </li>
                 <li className="flex items-start gap-1.5 text-xs text-muted-foreground">
                   <Calendar className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-                  กรอกน้ำหนักสิ้นเดือนได้ตั้งแต่วันสุดท้ายของเดือนและไม่เกิน {END_WEIGHT_GRACE_DAYS} วันหลังจบเดือน
+                  กรอกน้ำหนักสิ้นเดือนได้วันสุดท้ายของเดือนและวันที่ 1 เดือนถัดไป
                 </li>
               </ul>
             </div>
@@ -136,22 +134,16 @@ export default function Home() {
       </section>
 
       {/* Personal stats */}
-      <section className="grid gap-4 sm:grid-cols-2">
+      <section>
         {statsLoading ? (
-          <Card className="sm:col-span-2">
+          <Card>
             <LoadingBlock label="กำลังโหลดสถิติการวิ่ง…" />
           </Card>
         ) : (
-          <>
-        <StatGroup title="สะสมทั้งหมด" caption="ตั้งแต่เริ่มโครงการ" icon={TrendingUp} tone="ink">
-          <Stat label="ระยะทางสะสม" value={totalKm.toFixed(1)} unit="กม." />
-          <Stat label="จำนวนครั้งที่วิ่ง" value={String(approvedRunCount)} unit="ครั้ง" />
-        </StatGroup>
-        <StatGroup title="เดือนนี้" caption={monthLabel(weighMonth)} icon={Target} tone="primary">
-          <Stat label="ระยะทางสะสม" value={monthKm.toFixed(1)} unit="กม." />
-          <Stat label="จำนวนครั้งที่วิ่ง" value={String(monthRunCount)} unit="ครั้ง" />
-        </StatGroup>
-          </>
+          <StatGroup title="เดือนนี้" caption={monthLabel(weighMonth)} icon={Target} tone="primary">
+            <Stat label="ระยะทางสะสม" value={monthKm.toFixed(1)} unit="กม." />
+            <Stat label="จำนวนครั้งที่วิ่ง" value={String(monthRunCount)} unit="ครั้ง" />
+          </StatGroup>
         )}
       </section>
 

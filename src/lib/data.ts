@@ -13,6 +13,7 @@
  */
 
 import type { Employee } from "./types";
+import { normalizeEmployeeId } from "./employee-id";
 import { isCheckerRole } from "./roles";
 
 export type { Employee };
@@ -30,10 +31,10 @@ export const EMPLOYEES: Employee[] = [
   { id: "10022", name: "พิมพ์ชนก ใจดี", position: "เจ้าหน้าที่", department: "Operations", managerId: "10003" },
 ];
 
-const byId = new Map(EMPLOYEES.map((e) => [e.id, e]));
+const byId = new Map(EMPLOYEES.map((e) => [normalizeEmployeeId(e.id), e]));
 
 export function findEmployee(id: string): Employee | undefined {
-  return byId.get(id.trim());
+  return byId.get(normalizeEmployeeId(id));
 }
 
 export function directReports(managerId: string): Employee[] {
