@@ -147,16 +147,17 @@ export function useRuns(employeeId: string | undefined, options?: UseEntriesOpti
             if (!silent) setLoadSlow(true);
           },
           onSettled: (result) => {
-            if (silent) return;
             if (result.ok) {
               setRuns(result.value);
               setLoadError(null);
-            } else {
+            } else if (!silent) {
               setRuns([]);
               setLoadError(result.message);
             }
-            setLoading(false);
-            setLoadSlow(false);
+            if (!silent) {
+              setLoading(false);
+              setLoadSlow(false);
+            }
           },
         },
       );
@@ -222,19 +223,21 @@ export function useRunHistory(employeeId: string | undefined, pageSize = RUN_HIS
             if (!silent) setLoadSlow(true);
           },
           onSettled: (result) => {
-            if (silent) return;
             if (result.ok) {
               setRuns(result.value.runs);
               setTotal(result.value.total);
-              if (result.value.page !== page) setPage(result.value.page);
+              const resolvedPage = opts?.page ?? result.value.page;
+              if (resolvedPage !== page) setPage(resolvedPage);
               setLoadError(null);
-            } else {
+            } else if (!silent) {
               setRuns([]);
               setTotal(0);
               setLoadError(result.message);
             }
-            setLoading(false);
-            setLoadSlow(false);
+            if (!silent) {
+              setLoading(false);
+              setLoadSlow(false);
+            }
           },
         },
       );
@@ -257,10 +260,10 @@ export function useRunHistory(employeeId: string | undefined, pageSize = RUN_HIS
   }, [refresh]);
 
   useEffect(() => {
-    const onChange = () => void refresh({ silent: true, page });
+    const onChange = () => void refresh({ silent: true, page: 1 });
     window.addEventListener(DATA_CHANGED_EVENT, onChange);
     return () => window.removeEventListener(DATA_CHANGED_EVENT, onChange);
-  }, [refresh, page]);
+  }, [refresh]);
 
   const goToPage = useCallback(
     (next: number) => {
@@ -321,16 +324,17 @@ export function useWeights(
             if (!silent) setLoadSlow(true);
           },
           onSettled: (result) => {
-            if (silent) return;
             if (result.ok) {
               setWeights(result.value);
               setLoadError(null);
-            } else {
+            } else if (!silent) {
               setWeights([]);
               setLoadError(result.message);
             }
-            setLoading(false);
-            setLoadSlow(false);
+            if (!silent) {
+              setLoading(false);
+              setLoadSlow(false);
+            }
           },
         },
       );
