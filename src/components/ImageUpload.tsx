@@ -211,9 +211,6 @@ export function ImageUploadMulti({ label, required, values, onChange, max = 5, h
     }
 
     const picked = Array.from(files).slice(0, room);
-    if (files.length > room) {
-      setError(`แนบได้อีก ${room} รูป (สูงสุด ${max} รูป)`);
-    }
 
     const objectUrls = picked.map((file) => URL.createObjectURL(file));
     const staged = [...valuesRef.current, ...objectUrls];

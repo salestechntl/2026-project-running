@@ -37,7 +37,7 @@ export default function Home() {
       to: "/app/dashboard",
       icon: BarChart3,
       title: "Dashboard",
-      desc: "ดูสถิติและภาพรวมผลการวิ่งบน Tableau",
+      desc: "ดูสถิติและผลการวิ่ง",
       cta: "เปิด Dashboard",
     },
     ...(manageTeam
