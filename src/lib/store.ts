@@ -27,7 +27,7 @@ function resolveStatusForEmployee(employeeId: string, explicit?: EntryStatus): E
   return isTeamLead(employeeId) || (emp != null && isChecker(emp)) ? "approved" : "pending";
 }
 
-/** ประเภทการวิ่ง: วินัยการวิ่ง (ค่าเริ่มต้น) / ภารกิจประจำเดือน / เพิ่มวิ่งกับช่องทาง */
+/** ประเภทการวิ่ง: วินัยการวิ่ง (ค่าเริ่มต้น) / ภารกิจประจำเดือน / วิ่งกับช่องทาง */
 export type RunType = "discipline" | "mission" | "channel";
 
 export const RUN_TYPES: RunType[] = ["discipline", "mission", "channel"];
@@ -35,7 +35,7 @@ export const RUN_TYPES: RunType[] = ["discipline", "mission", "channel"];
 export const RUN_TYPE_LABEL: Record<RunType, string> = {
   discipline: "วินัยการวิ่ง",
   mission: "ภารกิจประจำเดือน",
-  channel: "เพิ่มวิ่งกับช่องทาง",
+  channel: "วิ่งกับช่องทาง",
 };
 
 export function runTypeBadgeTone(runType: RunType): "info" | "accent" | "gold" {

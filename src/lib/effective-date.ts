@@ -1,4 +1,6 @@
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** โซนเวลาธุรกิจ — สอดคล้องกับ API (Asia/Bangkok) */
+const APP_TIMEZONE = "Asia/Bangkok";
 
 function parseSimulatedISO(value: string | undefined): string | null {
   const v = value?.trim();
@@ -9,11 +11,9 @@ function parseSimulatedISO(value: string | undefined): string | null {
   return v;
 }
 
-/** วันนี้จริง (local timezone) yyyy-mm-dd */
+/** วันนี้จริง (ปฏิทินไทย) yyyy-mm-dd */
 export function todayISOReal(): string {
-  const d = new Date();
-  const tz = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - tz).toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIMEZONE }).format(new Date());
 }
 
 /** ค่าจาก VITE_SIMULATED_TODAY ถ้าตั้งค่าและถูกต้อง */

@@ -1,4 +1,6 @@
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** โซนเวลาธุรกิจ — กฎวันที่บันทึกอิงปฏิทินไทย (Vercel API รัน UTC) */
+const APP_TIMEZONE = "Asia/Bangkok";
 
 function parseSimulatedISO(value: string | undefined): string | null {
   const v = value?.trim();
@@ -10,9 +12,7 @@ function parseSimulatedISO(value: string | undefined): string | null {
 }
 
 export function todayISOReal(): string {
-  const d = new Date();
-  const tz = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - tz).toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIMEZONE }).format(new Date());
 }
 
 export function getSimulatedTodayISO(): string | null {
