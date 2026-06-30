@@ -27,11 +27,11 @@ function resolveStatusForEmployee(employeeId: string, explicit?: EntryStatus): E
   return isTeamLead(employeeId) || (emp != null && isChecker(emp)) ? "approved" : "pending";
 }
 
-/** ประเภทการวิ่ง: วัดวินัย (ค่าเริ่มต้น) / ภารกิจประจำเดือน */
+/** ประเภทการวิ่ง: วินัยการวิ่ง (ค่าเริ่มต้น) / ภารกิจประจำเดือน */
 export type RunType = "discipline" | "mission";
 
 export const RUN_TYPE_LABEL: Record<RunType, string> = {
-  discipline: "วัดวินัย",
+  discipline: "วินัยการวิ่ง",
   mission: "ภารกิจประจำเดือน",
 };
 
