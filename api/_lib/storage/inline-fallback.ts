@@ -23,15 +23,16 @@ export async function inlineRunImagesFallback(
 export async function inlineWeightImageFallback(
   supabase: SupabaseClient,
   weightId: string,
-  slot: ImageSlotInput,
+  slots: ImageSlotInput[],
 ): Promise<AttachmentView | null> {
-  if (!isDataUrl(slot.preview)) return null;
+  const inline = slots.map((s) => s.preview).filter(isDataUrl);
+  if (inline.length === 0) return null;
 
-  const { error } = await supabase.from("weight_entries").update({ proof_image: slot.preview }).eq("id", weightId);
+  const { error } = await supabase.from("weight_entries").update({ proof_image: inline[0] }).eq("id", weightId);
   if (error) {
     console.error("inline weight image fallback error:", error);
     return null;
   }
 
-  return { urls: [slot.preview], refs: [] };
+  return { urls: inline, refs: [] };
 }

@@ -177,7 +177,7 @@ export async function saveWeightEntry(
   entry: Omit<WeightEntry, "id" | "createdAt" | "updatedAt" | "status"> & {
     id?: string;
     status?: EntryStatus;
-    proofImageRef?: string;
+    proofImageRefs?: (string | undefined)[];
   },
 ): Promise<WeightEntry> {
   if (getAuthMode() === "api") {

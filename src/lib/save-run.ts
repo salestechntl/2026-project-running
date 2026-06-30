@@ -1,4 +1,5 @@
 import { getAuthMode } from "./auth-config";
+import { isCompressingPreview } from "./compress-image";
 import { apiDeleteRun, apiSaveRunRecord, apiUploadRunImages } from "./api";
 import {
   SaveRunStepError,
@@ -20,6 +21,9 @@ function prepareImages(
   const list = images ?? [];
   if (list.length === 0) {
     throw new SaveRunStepError("images", "แนบภาพกิจกรรมอย่างน้อย 1 รูป");
+  }
+  if (list.some(isCompressingPreview)) {
+    throw new SaveRunStepError("images", "กำลังบีบอัดรูป กรุณารอสักครู่");
   }
   const newCount = list.filter((img) => img.startsWith("data:")).length;
   const keepCount = list.length - newCount;

@@ -1,4 +1,7 @@
 import { getAuthMode } from "./auth-config";
+import {
+  isCompressingPreview,
+} from "./compress-image";
 import { apiSaveWeight } from "./api";
 import {
   SaveWeightStepError,
@@ -7,11 +10,40 @@ import {
 } from "./save-progress";
 import { saveWeight as localSaveWeight, type WeightEntry } from "./store";
 
+const MAX_WEIGHT_IMAGES = 2;
+
 type WeightSaveInput = Omit<WeightEntry, "id" | "createdAt" | "updatedAt" | "status"> & {
   id?: string;
   status?: WeightEntry["status"];
-  proofImageRef?: string;
+  proofImageRefs?: (string | undefined)[];
 };
+
+function prepareImages(
+  images: string[] | undefined,
+  refs: (string | undefined)[] | undefined,
+): { count: number; refs?: string[]; detail: string } {
+  const list = images ?? [];
+  if (list.length === 0) {
+    throw new SaveWeightStepError("image", "แนบภาพน้ำหนักอย่างน้อย 1 รูป");
+  }
+  if (list.some(isCompressingPreview)) {
+    throw new SaveWeightStepError("image", "กำลังบีบอัดรูป กรุณารอสักครู่");
+  }
+  if (list.length > MAX_WEIGHT_IMAGES) {
+    throw new SaveWeightStepError("image", `แนบได้สูงสุด ${MAX_WEIGHT_IMAGES} รูป`);
+  }
+  const newCount = list.filter((img) => img.startsWith("data:")).length;
+  const keepCount = list.length - newCount;
+  const detail =
+    newCount > 0 && keepCount > 0
+      ? `${list.length} รูป (อัปโหลดใหม่ ${newCount}, ใช้รูปเดิม ${keepCount})`
+      : `${list.length} รูป`;
+  return {
+    count: list.length,
+    refs: refs?.some(Boolean) ? refs.map((r) => r ?? "") : undefined,
+    detail,
+  };
+}
 
 async function runStep<T>(
   stepId: WeightSaveStepId,
@@ -37,14 +69,10 @@ export async function saveWeightEntryWithProgress(
   opts?: { isUpdate?: boolean },
 ): Promise<WeightEntry> {
   onProgress("image", "running");
+  let imageInfo: ReturnType<typeof prepareImages>;
   try {
-    if (!entry.proofImage) {
-      throw new SaveWeightStepError("image", "แนบภาพน้ำหนัก");
-    }
-    const detail = entry.proofImage.startsWith("data:")
-      ? "อัปโหลดรูปใหม่"
-      : "ใช้รูปเดิม";
-    onProgress("image", "done", detail);
+    imageInfo = prepareImages(entry.proofImages, entry.proofImageRefs);
+    onProgress("image", "done", imageInfo.detail);
   } catch (e) {
     const message = e instanceof Error ? e.message : "เตรียมรูปภาพไม่สำเร็จ";
     onProgress("image", "error", message);

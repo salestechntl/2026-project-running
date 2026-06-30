@@ -61,8 +61,11 @@ export interface WeightEntry {
   month: string; // yyyy-mm
   period: WeightPeriod;
   weightKg: number;
+  proofImages?: string[];
+  proofImageRefs?: string[];
+  /** @deprecated first image — use proofImages */
   proofImage?: string;
-  proofImageRef?: string; // storage path สำหรับ round-trip ตอนแก้ไข (API mode)
+  proofImageRef?: string;
   status: EntryStatus;
   rejectNote?: string;
   staffEditNote?: string;
@@ -647,7 +650,7 @@ export function seedDemo() {
       period,
       weightKg: kg,
       status: status ?? (isTeamLead(emp) ? "approved" : "pending"),
-      proofImage: weightProof(kg, period === "start" ? "ต้นเดือน" : "สิ้นเดือน"),
+      proofImages: [weightProof(kg, period === "start" ? "ต้นเดือน" : "สิ้นเดือน")],
     });
     if (status === "rejected") {
       const created = getWeights(emp).find((w) => w.month === month && w.period === period);

@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAuth } from "../_lib/auth/require.js";
 import { createAdminClient, isSupabaseConfigured } from "../_lib/supabase/admin.js";
 import { canAccessEmployee, canApproveEntries, canSelfApprove } from "../_lib/team/access.js";
-import { mapWeight, validateProofSlot, type DbWeightRow } from "../_lib/entries/map.js";
+import { mapWeight, parseWeightProofSlots, type DbWeightRow } from "../_lib/entries/map.js";
 import { resolveSubmitStatus } from "../_lib/entries/status.js";
 import { expirePendingEntries } from "../_lib/entries/expire.js";
 import {
@@ -41,8 +41,11 @@ async function enrichWeights(
 
   return rows.map((row) => {
     const view = views.get(row.id);
-    const image = view?.urls[0] && view.refs[0] ? { url: view.urls[0], ref: view.refs[0] } : undefined;
-    return mapWeight(row, image);
+    const images =
+      view && view.urls.length > 0
+        ? { urls: view.urls, refs: view.refs }
+        : undefined;
+    return mapWeight(row, images);
   });
 }
 
@@ -95,10 +98,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const month = String(body.month ?? "").trim();
       const period = body.period;
       const weightKg = Number(body.weightKg ?? body.weight_kg);
-      const proofSlot = validateProofSlot(
-        body.proofImage ?? body.proof_image,
-        body.proofImageRef ?? body.proof_image_ref,
-      );
+      const proofSlots = parseWeightProofSlots(body);
 
       if (employeeId !== auth.sub) {
         return res.status(403).json({ error: "บันทึกได้เฉพาะข้อมูลของตนเอง" });
@@ -112,10 +112,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!weightKg || weightKg <= 0) {
         return res.status(400).json({ error: "น้ำหนักต้องมากกว่า 0" });
       }
-      if (proofSlot === null) {
+      if (proofSlots === null) {
         return res.status(400).json({ error: "ภาพน้ำหนักไม่ถูกต้อง กรุณาเลือกรูปใหม่" });
       }
-      if (!proofSlot) {
+      if (!proofSlots) {
         return res.status(400).json({ error: "แนบภาพน้ำหนัก" });
       }
 
@@ -243,17 +243,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
-      const attached = await syncEntryAttachments(supabase, "weight", entryId, auth.sub, [proofSlot], { max: 1 });
+      const attached = await syncEntryAttachments(supabase, "weight", entryId, auth.sub, proofSlots);
       const view =
         "error" in attached
-          ? (await inlineWeightImageFallback(supabase, entryId, proofSlot)) ?? attached
+          ? (await inlineWeightImageFallback(supabase, entryId, proofSlots)) ?? attached
           : attached;
       if ("error" in view) {
         return res.status(400).json({ error: view.error });
       }
 
-      const image = { url: view.urls[0], ref: view.refs[0] };
-      return res.status(isUpdate ? 200 : 201).json({ weight: mapWeight(row, image) });
+      return res.status(isUpdate ? 200 : 201).json({ weight: mapWeight(row, view) });
     }
 
     return res.status(405).json({ error: "Method not allowed" });

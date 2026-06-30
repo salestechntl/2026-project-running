@@ -25,10 +25,7 @@ export default function Dashboard() {
             <BarChart3 className="h-8 w-8" />
           </span>
           <div className="relative">
-            <p className="text-lg font-bold">เปิดรายงานบน Tableau</p>
-            <p className="mt-1 text-sm text-ink-foreground/70">
-              ท่านสามารถดูรายการโดยใช้คอมพิวเตอร์บริษัทเท่านั้น
-            </p>
+            <p className="text-lg font-bold">เปิดรายงาน</p>
           </div>
           <span className="relative inline-flex items-center gap-1.5 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-semibold text-ink-foreground backdrop-blur transition-colors group-hover:bg-white/25">
             ไปยัง Dashboard

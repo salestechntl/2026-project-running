@@ -279,7 +279,7 @@ export async function apiSaveWeight(
   entry: Omit<WeightEntry, "id" | "createdAt" | "updatedAt" | "status"> & {
     id?: string;
     status?: EntryStatus;
-    proofImageRef?: string;
+    proofImageRefs?: (string | undefined)[];
   },
 ): Promise<WeightEntry> {
   const res = await fetch("/api/weights", {

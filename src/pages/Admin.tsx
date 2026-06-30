@@ -14,7 +14,7 @@ import {
 } from "@/lib/entries";
 import { useRuns, useWeights } from "@/lib/hooks/useEntries";
 import { useSubordinates } from "@/lib/hooks/useTeam";
-import { formatThaiDate, formatThaiDateTime, formatDurationThai, matchesEmployeeSearch } from "@/lib/utils";
+import { formatThaiDate, formatThaiDateTime, formatDurationThai, formatDurationCompact, matchesEmployeeSearch } from "@/lib/utils";
 import { Card, Badge, Button, LoadingBlock, Field, Input, Select, ConfirmDialog, RejectReasonDialog, AlertDialog } from "@/components/ui";
 import { DateSelect } from "@/components/DateSelect";
 import { cn } from "@/lib/utils";
@@ -40,6 +40,12 @@ interface StatusTotals {
 }
 
 const EMPTY_STATUS_TOTALS: StatusTotals = { pending: 0, approved: 0, rejected: 0, expired: 0 };
+const TEAM_MEMBER_PAGE_SIZE = 5;
+
+function maxEntryUpdatedAt(entries: readonly { updatedAt: number }[]): number {
+  if (entries.length === 0) return 0;
+  return Math.max(...entries.map((e) => e.updatedAt));
+}
 
 function memberHasWorkStatus(flags: MemberWorkStatus | undefined, filter: WorkStatusFilter): boolean {
   if (filter === "all") return true;
@@ -60,12 +66,14 @@ export default function Admin() {
   const [gallery, setGallery] = useState<{ images: string[]; index: number } | null>(null);
   const [runCounts, setRunCounts] = useState<Record<string, number>>({});
   const [pendingCounts, setPendingCounts] = useState<Record<string, number>>({});
+  const [lastUpdatedByMember, setLastUpdatedByMember] = useState<Record<string, number>>({});
   const [workStatusByMember, setWorkStatusByMember] = useState<Record<string, MemberWorkStatus>>({});
   const [statusTotals, setStatusTotals] = useState<StatusTotals>(EMPTY_STATUS_TOTALS);
   const [countsLoading, setCountsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<WorkStatusFilter>("all");
+  const [memberPage, setMemberPage] = useState(1);
   const openGallery = (images: string[]) => images.length > 0 && setGallery({ images, index: 0 });
 
   const departmentOptions = useMemo(() => {
@@ -84,15 +92,38 @@ export default function Admin() {
     });
   }, [team, searchQuery, departmentFilter, statusFilter, workStatusByMember, countsLoading]);
 
+  const sortedTeam = useMemo(() => {
+    return [...filteredTeam].sort((a, b) => {
+      const diff = (lastUpdatedByMember[b.id] ?? 0) - (lastUpdatedByMember[a.id] ?? 0);
+      if (diff !== 0) return diff;
+      return a.name.localeCompare(b.name, "th");
+    });
+  }, [filteredTeam, lastUpdatedByMember]);
+
+  const memberTotalPages = Math.max(1, Math.ceil(sortedTeam.length / TEAM_MEMBER_PAGE_SIZE));
+
+  const pageTeam = useMemo(() => {
+    const start = (memberPage - 1) * TEAM_MEMBER_PAGE_SIZE;
+    return sortedTeam.slice(start, start + TEAM_MEMBER_PAGE_SIZE);
+  }, [sortedTeam, memberPage]);
+
   useEffect(() => {
-    if (filteredTeam.length === 0) {
+    setMemberPage(1);
+  }, [searchQuery, departmentFilter, statusFilter]);
+
+  useEffect(() => {
+    setMemberPage((p) => Math.min(p, memberTotalPages));
+  }, [memberTotalPages]);
+
+  useEffect(() => {
+    if (sortedTeam.length === 0) {
       setSelectedId(null);
       return;
     }
-    if (!selectedId || !filteredTeam.some((m) => m.id === selectedId)) {
-      setSelectedId(filteredTeam[0].id);
+    if (!selectedId || !sortedTeam.some((m) => m.id === selectedId)) {
+      setSelectedId(sortedTeam[0].id);
     }
-  }, [filteredTeam, selectedId]);
+  }, [sortedTeam, selectedId]);
 
   const selected = filteredTeam.find((t) => t.id === selectedId) ?? team.find((t) => t.id === selectedId);
   const adminFetchOpts = { listenChanges: false } as const;
@@ -139,6 +170,10 @@ export default function Admin() {
         rejected: entries.some((e) => e.status === "rejected"),
         expired: entries.some((e) => e.status === "expired"),
       },
+    }));
+    setLastUpdatedByMember((prev) => ({
+      ...prev,
+      [memberId]: maxEntryUpdatedAt(entries),
     }));
   }, []);
 
@@ -263,6 +298,7 @@ export default function Admin() {
     if (!user || team.length === 0) {
       setCountsLoading(false);
       setWorkStatusByMember({});
+      setLastUpdatedByMember({});
       setStatusTotals(EMPTY_STATUS_TOTALS);
       return;
     }
@@ -271,6 +307,7 @@ export default function Admin() {
     const load = async () => {
       const counts: Record<string, number> = {};
       const pending: Record<string, number> = {};
+      const lastUpdated: Record<string, number> = {};
       const workStatus: Record<string, MemberWorkStatus> = {};
       const totals: StatusTotals = { pending: 0, approved: 0, rejected: 0, expired: 0 };
       await Promise.all(
@@ -284,6 +321,7 @@ export default function Admin() {
           pending[member.id] =
             memberRuns.filter((r) => r.status === "pending").length +
             memberWeights.filter((w) => w.status === "pending").length;
+          lastUpdated[member.id] = maxEntryUpdatedAt(entries);
           workStatus[member.id] = {
             pending: entries.some((e) => e.status === "pending"),
             approved: entries.some((e) => e.status === "approved"),
@@ -298,6 +336,7 @@ export default function Admin() {
       if (!cancelled) {
         setRunCounts(counts);
         setPendingCounts(pending);
+        setLastUpdatedByMember(lastUpdated);
         setWorkStatusByMember(workStatus);
         setStatusTotals(totals);
         setCountsLoading(false);
@@ -340,34 +379,36 @@ export default function Admin() {
             </div>
           </Field>
 
-          <Field label="แผนก" htmlFor="team-department" className="w-full shrink-0 sm:w-44">
-            <Select
-              id="team-department"
-              value={departmentFilter}
-              onChange={(e) => setDepartmentFilter(e.target.value)}
-            >
-              <option value="all">ทั้งหมด</option>
-              {departmentOptions.map((dept) => (
-                <option key={dept} value={dept}>
-                  {dept}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:w-auto xl:shrink-0">
+            <Field label="แผนก" htmlFor="team-department" className="min-w-0">
+              <Select
+                id="team-department"
+                value={departmentFilter}
+                onChange={(e) => setDepartmentFilter(e.target.value)}
+              >
+                <option value="all">ทั้งหมด</option>
+                {departmentOptions.map((dept) => (
+                  <option key={dept} value={dept}>
+                    {dept}
+                  </option>
+                ))}
+              </Select>
+            </Field>
 
-          <Field label="สถานะ" htmlFor="team-status" className="w-full shrink-0 sm:w-44">
-            <Select
-              id="team-status"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as WorkStatusFilter)}
-            >
-              <option value="all">ทั้งหมด</option>
-              <option value="pending">{ENTRY_STATUS_LABEL.pending}</option>
-              <option value="approved">{ENTRY_STATUS_LABEL.approved}</option>
-              <option value="rejected">{ENTRY_STATUS_LABEL.rejected}</option>
-              <option value="expired">{ENTRY_STATUS_LABEL.expired}</option>
-            </Select>
-          </Field>
+            <Field label="สถานะ" htmlFor="team-status" className="min-w-0">
+              <Select
+                id="team-status"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as WorkStatusFilter)}
+              >
+                <option value="all">ทั้งหมด</option>
+                <option value="pending">{ENTRY_STATUS_LABEL.pending}</option>
+                <option value="approved">{ENTRY_STATUS_LABEL.approved}</option>
+                <option value="rejected">{ENTRY_STATUS_LABEL.rejected}</option>
+                <option value="expired">{ENTRY_STATUS_LABEL.expired}</option>
+              </Select>
+            </Field>
+          </div>
 
           <StatusTotalsSummary totals={statusTotals} loading={countsLoading} />
         </div>
@@ -388,7 +429,8 @@ export default function Admin() {
               ไม่พบสมาชิกที่ตรงกับตัวกรอง
             </Card>
           ) : (
-          filteredTeam.map((member) => {
+          <Card className="divide-y divide-border overflow-hidden">
+            {pageTeam.map((member) => {
             const count = runCounts[member.id] ?? 0;
             const pending = pendingCounts[member.id] ?? 0;
             const active = member.id === selectedId;
@@ -397,8 +439,8 @@ export default function Admin() {
                 key={member.id}
                 onClick={() => setSelectedId(member.id)}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-lg border px-3.5 py-3 text-left transition-all",
-                  active ? "border-primary/40 bg-primary/5 shadow-sm" : "border-border bg-card hover:border-primary/30 hover:bg-muted/50",
+                  "flex w-full items-center gap-3 px-3.5 py-3 text-left transition-all",
+                  active ? "bg-primary/5" : "bg-card hover:bg-muted/50",
                 )}
               >
                 <span className={cn(
@@ -424,7 +466,14 @@ export default function Admin() {
                 <ChevronRight className={cn("h-4 w-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
               </button>
             );
-          })
+          })}
+            <TeamMemberPagination
+              page={memberPage}
+              totalItems={sortedTeam.length}
+              pageSize={TEAM_MEMBER_PAGE_SIZE}
+              onPageChange={setMemberPage}
+            />
+          </Card>
           )}
         </aside>
 
@@ -597,6 +646,10 @@ function Gallery({
 }
 
 /* ---------- status controls (approve / reject) ---------- */
+const statusBarClass =
+  "flex w-full flex-wrap items-center gap-2 max-md:justify-stretch md:w-auto md:justify-end";
+const statusActionBtnClass = "h-8 px-2.5 text-xs max-md:flex-1 max-md:min-w-0";
+
 function StatusControls({
   status,
   busy,
@@ -626,14 +679,14 @@ function StatusControls({
   if (status === "pending") {
     return (
       <>
-        <div className="flex flex-wrap items-center justify-end gap-1.5">
+        <div className={statusBarClass}>
           <Badge tone="warning"><Clock className="h-3 w-3" /> {ENTRY_STATUS_LABEL.pending}</Badge>
           {canApprove && (
             <Button
               size="sm"
               onClick={() => setApproveOpen(true)}
               disabled={busy}
-              className="h-8 px-2.5 text-xs"
+              className={statusActionBtnClass}
             >
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "อนุมัติ"}
             </Button>
@@ -644,7 +697,7 @@ function StatusControls({
               variant="outline"
               onClick={() => setRejectOpen(true)}
               disabled={busy}
-              className="h-8 px-2.5 text-xs"
+              className={statusActionBtnClass}
             >
               ไม่ผ่าน
             </Button>
@@ -678,10 +731,10 @@ function StatusControls({
   }
   if (status === "expired") {
     return (
-      <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <div className={statusBarClass}>
         <Badge tone="neutral"><Clock className="h-3 w-3" /> {ENTRY_STATUS_LABEL.expired}</Badge>
         {canEdit && onEdit && (
-          <Button size="sm" variant="outline" onClick={onEdit} disabled={busy} className="h-8 px-2.5 text-xs">
+          <Button size="sm" variant="outline" onClick={onEdit} disabled={busy} className={statusActionBtnClass}>
             แก้ไข
           </Button>
         )}
@@ -690,10 +743,10 @@ function StatusControls({
   }
   if (status === "approved") {
     return (
-      <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <div className={statusBarClass}>
         <Badge tone="success"><CheckCircle2 className="h-3 w-3" /> {ENTRY_STATUS_LABEL.approved}</Badge>
         {canEdit && onEdit && (
-          <Button size="sm" variant="outline" onClick={onEdit} disabled={busy} className="h-8 px-2.5 text-xs">
+          <Button size="sm" variant="outline" onClick={onEdit} disabled={busy} className={statusActionBtnClass}>
             แก้ไข
           </Button>
         )}
@@ -701,10 +754,10 @@ function StatusControls({
     );
   }
   return (
-    <div className="flex flex-wrap items-center justify-end gap-1.5">
+    <div className={statusBarClass}>
       <Badge tone="danger"><AlertTriangle className="h-3 w-3" /> {ENTRY_STATUS_LABEL.rejected}</Badge>
       {canEdit && onEdit && (
-        <Button size="sm" variant="outline" onClick={onEdit} disabled={busy} className="h-8 px-2.5 text-xs">
+        <Button size="sm" variant="outline" onClick={onEdit} disabled={busy} className={statusActionBtnClass}>
           แก้ไข
         </Button>
       )}
@@ -914,36 +967,47 @@ function RunRow({
 
   return (
     <div className="p-4">
-      <div className="flex items-center gap-4">
-        <ProofThumb images={run.stravaImages} onClick={onPreview} />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-foreground">{formatThaiDate(run.date)}</span>
-            <Badge tone={run.runType === "discipline" ? "info" : "accent"}>
-              {run.runType === "mission" && run.missionTag
-                ? missionName(run.missionTag)
-                : RUN_TYPE_LABEL[run.runType]}
-            </Badge>
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+        <div className="flex min-w-0 flex-1 items-start gap-3 md:items-center md:gap-4">
+          <ProofThumb images={run.stravaImages} onClick={onPreview} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="whitespace-nowrap text-sm font-semibold text-foreground">{formatThaiDate(run.date)}</span>
+              <Badge tone={run.runType === "discipline" ? "info" : "accent"}>
+                {run.runType === "mission" && run.missionTag
+                  ? missionName(run.missionTag)
+                  : RUN_TYPE_LABEL[run.runType]}
+              </Badge>
+            </div>
+            <p className="tnum mt-0.5 truncate text-xs text-muted-foreground md:whitespace-normal">
+              <span className="md:hidden">
+                {run.distanceKm.toFixed(2)} กม. · {formatDurationCompact(run.durationSec)}
+                {run.note ? ` · ${run.note}` : ""}
+              </span>
+              <span className="hidden md:inline">
+                {run.distanceKm.toFixed(2)} กม. · {formatDurationThai(run.durationSec)}
+                {run.note ? ` · ${run.note}` : ""}
+              </span>
+            </p>
+            <p className="tnum mt-0.5 hidden text-xs text-muted-foreground/80 sm:block">
+              อัปเดตล่าสุด {formatThaiDateTime(run.updatedAt)}
+            </p>
           </div>
-          <p className="tnum mt-0.5 text-xs text-muted-foreground">
-            {run.distanceKm.toFixed(2)} กม. · {formatDurationThai(run.durationSec)}{run.note ? ` · ${run.note}` : ""}
-          </p>
-          <p className="tnum mt-0.5 text-xs text-muted-foreground/80">
-            อัปเดตล่าสุด {formatThaiDateTime(run.updatedAt)}
-          </p>
         </div>
-        <StatusControls
-          status={run.status}
-          busy={busy}
-          canApprove={canApprove}
-          canReject={canReject}
-          canEdit={canEdit}
-          approveMessage={`อนุมัติการวิ่งวันที่ ${formatThaiDate(run.date)} · ${run.distanceKm.toFixed(2)} กม.`}
-          rejectMessage={`การวิ่งวันที่ ${formatThaiDate(run.date)} · ${run.distanceKm.toFixed(2)} กม.`}
-          onApprove={() => void act(() => onStatusChange(run, "approved"))}
-          onReject={(reason) => void act(() => onStatusChange(run, "rejected", reason))}
-          onEdit={openEdit}
-        />
+        <div className="w-full shrink-0 border-t border-border/60 pt-3 md:w-auto md:border-0 md:pt-0">
+          <StatusControls
+            status={run.status}
+            busy={busy}
+            canApprove={canApprove}
+            canReject={canReject}
+            canEdit={canEdit}
+            approveMessage={`อนุมัติการวิ่งวันที่ ${formatThaiDate(run.date)} · ${run.distanceKm.toFixed(2)} กม.`}
+            rejectMessage={`การวิ่งวันที่ ${formatThaiDate(run.date)} · ${run.distanceKm.toFixed(2)} กม.`}
+            onApprove={() => void act(() => onStatusChange(run, "approved"))}
+            onReject={(reason) => void act(() => onStatusChange(run, "rejected", reason))}
+            onEdit={openEdit}
+          />
+        </div>
       </div>
       {run.status === "rejected" && run.rejectNote && (
         <p className="mt-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-[hsl(32_80%_34%)]">หมายเหตุ: {run.rejectNote}</p>
@@ -1111,30 +1175,39 @@ function WeightRow({
 
   return (
     <div className="p-4">
-      <div className="flex items-center gap-4">
-        <ProofThumb images={weight.proofImage ? [weight.proofImage] : []} onClick={onPreview} />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="tnum text-sm font-semibold text-foreground">{weight.weightKg.toFixed(1)} กก.</span>
-            <Badge tone="neutral">{weight.period === "start" ? "ต้นเดือน" : "สิ้นเดือน"}</Badge>
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+        <div className="flex min-w-0 flex-1 items-start gap-3 md:items-center md:gap-4">
+          <ProofThumb
+            images={weight.proofImages?.length ? weight.proofImages : weight.proofImage ? [weight.proofImage] : []}
+            onClick={onPreview}
+          />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="tnum whitespace-nowrap text-sm font-semibold text-foreground">
+                {weight.weightKg.toFixed(1)} กก.
+              </span>
+              <Badge tone="neutral">{weight.period === "start" ? "ต้นเดือน" : "สิ้นเดือน"}</Badge>
+            </div>
+            <p className="tnum mt-0.5 text-xs text-muted-foreground">เดือน {weight.month}</p>
+            <p className="tnum mt-0.5 hidden text-xs text-muted-foreground/80 sm:block">
+              อัปเดตล่าสุด {formatThaiDateTime(weight.updatedAt)}
+            </p>
           </div>
-          <p className="tnum mt-0.5 text-xs text-muted-foreground">เดือน {weight.month}</p>
-          <p className="tnum mt-0.5 text-xs text-muted-foreground/80">
-            อัปเดตล่าสุด {formatThaiDateTime(weight.updatedAt)}
-          </p>
         </div>
-        <StatusControls
-          status={weight.status}
-          busy={busy}
-          canApprove={canApprove}
-          canReject={canReject}
-          canEdit={canEdit}
-          approveMessage={`อนุมัติน้ำหนักเดือน ${weight.month} (${weight.period === "start" ? "ต้นเดือน" : "สิ้นเดือน"}) · ${weight.weightKg.toFixed(1)} กก.`}
-          rejectMessage={`น้ำหนักเดือน ${weight.month} (${weight.period === "start" ? "ต้นเดือน" : "สิ้นเดือน"}) · ${weight.weightKg.toFixed(1)} กก.`}
-          onApprove={() => void act(() => onStatusChange(weight, "approved"))}
-          onReject={(reason) => void act(() => onStatusChange(weight, "rejected", reason))}
-          onEdit={openEdit}
-        />
+        <div className="w-full shrink-0 border-t border-border/60 pt-3 md:w-auto md:border-0 md:pt-0">
+          <StatusControls
+            status={weight.status}
+            busy={busy}
+            canApprove={canApprove}
+            canReject={canReject}
+            canEdit={canEdit}
+            approveMessage={`อนุมัติน้ำหนักเดือน ${weight.month} (${weight.period === "start" ? "ต้นเดือน" : "สิ้นเดือน"}) · ${weight.weightKg.toFixed(1)} กก.`}
+            rejectMessage={`น้ำหนักเดือน ${weight.month} (${weight.period === "start" ? "ต้นเดือน" : "สิ้นเดือน"}) · ${weight.weightKg.toFixed(1)} กก.`}
+            onApprove={() => void act(() => onStatusChange(weight, "approved"))}
+            onReject={(reason) => void act(() => onStatusChange(weight, "rejected", reason))}
+            onEdit={openEdit}
+          />
+        </div>
       </div>
       {weight.status === "rejected" && weight.rejectNote && (
         <p className="mt-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-[hsl(32_80%_34%)]">หมายเหตุ: {weight.rejectNote}</p>
@@ -1193,6 +1266,57 @@ function EmptyState({ text }: { text: string }) {
         <Inbox className="h-5 w-5" />
       </span>
       <p className="text-sm text-muted-foreground">{text}</p>
+    </div>
+  );
+}
+
+function TeamMemberPagination({
+  page,
+  totalItems,
+  pageSize,
+  onPageChange,
+}: {
+  page: number;
+  totalItems: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  if (totalItems <= pageSize) return null;
+
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, totalItems);
+
+  return (
+    <div className="flex flex-col gap-2 px-3 py-2.5">
+      <p className="text-[11px] text-muted-foreground">
+        แสดง <span className="tnum">{from}–{to}</span> จาก <span className="tnum">{totalItems}</span> คน
+      </p>
+      <div className="flex items-center justify-between gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 flex-1 px-2 text-xs"
+          disabled={page <= 1}
+          onClick={() => onPageChange(page - 1)}
+        >
+          ก่อนหน้า
+        </Button>
+        <span className="tnum shrink-0 px-1 text-xs text-muted-foreground">
+          {page}/{totalPages}
+        </span>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 flex-1 px-2 text-xs"
+          disabled={page >= totalPages}
+          onClick={() => onPageChange(page + 1)}
+        >
+          ถัดไป
+        </Button>
+      </div>
     </div>
   );
 }

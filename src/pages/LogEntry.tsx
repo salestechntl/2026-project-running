@@ -29,7 +29,8 @@ import {
 import { useRunHistory, useWeights } from "@/lib/hooks/useEntries";
 import { pad2, formatThaiDate, formatDurationThai, formatThaiDateTime } from "@/lib/utils";
 import { Button, Card, Field, Input, Select, Badge, ConfirmDialog, LoadingBlock } from "@/components/ui";
-import { ImageUpload, ImageUploadMulti } from "@/components/ImageUpload";
+import { ImageUploadMulti } from "@/components/ImageUpload";
+import { isCompressingPreview } from "@/lib/compress-image";
 import { DateSelect } from "@/components/DateSelect";
 import { cn } from "@/lib/utils";
 
@@ -292,6 +293,7 @@ function RunForm({
     if (!dist || dist <= 0) e.distance = "กรอกระยะทางมากกว่า 0";
     if (!(Number(h) || Number(m) || Number(s))) e.time = "กรอกเวลาที่ใช้";
     if (images.length === 0) e.image = "แนบภาพกิจกรรมอย่างน้อย 1 รูป";
+    else if (images.some(isCompressingPreview)) e.image = "กำลังบีบอัดรูป กรุณารอสักครู่";
     return e;
   }
 
@@ -435,7 +437,7 @@ function RunForm({
               ยกเลิก
             </Button>
           )}
-          <Button type="submit" size="lg" disabled={saving} className="w-full sm:w-auto">
+          <Button type="submit" size="lg" disabled={saving || images.some(isCompressingPreview)} className="w-full sm:w-auto">
             {saving ? "กำลังบันทึก…" : editing ? "บันทึกการแก้ไข" : "บันทึกการวิ่ง"}
           </Button>
         </div>
@@ -903,6 +905,18 @@ const WeightHistory = forwardRef(function WeightHistory(
   );
 });
 
+function weightProofImages(w?: WeightEntry): string[] {
+  if (!w) return [];
+  if (w.proofImages?.length) return w.proofImages;
+  return w.proofImage ? [w.proofImage] : [];
+}
+
+function weightProofImageRefs(w?: WeightEntry): (string | undefined)[] {
+  if (!w) return [];
+  if (w.proofImageRefs?.length) return w.proofImageRefs;
+  return w.proofImageRef ? [w.proofImageRef] : [];
+}
+
 function WeightCard({
   employeeId,
   month,
@@ -919,8 +933,8 @@ function WeightCard({
   onSaved: () => void;
 }) {
   const [weight, setWeight] = useState(initial ? String(initial.weightKg) : "");
-  const [image, setImage] = useState<string | undefined>(initial?.proofImage);
-  const [imageRef, setImageRef] = useState<string | undefined>(initial?.proofImageRef);
+  const [images, setImages] = useState<string[]>(() => weightProofImages(initial));
+  const [imageRefs, setImageRefs] = useState<(string | undefined)[]>(() => weightProofImageRefs(initial));
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
@@ -933,16 +947,36 @@ function WeightCard({
   useEffect(() => {
     if (initial) {
       setWeight(String(initial.weightKg));
-      setImage(initial.proofImage);
-      setImageRef(initial.proofImageRef);
+      setImages(weightProofImages(initial));
+      setImageRefs(weightProofImageRefs(initial));
       setError(undefined);
     } else {
       setWeight("");
-      setImage(undefined);
-      setImageRef(undefined);
+      setImages([]);
+      setImageRefs([]);
       setError(undefined);
     }
-  }, [initial?.id, initial?.updatedAt, initial?.weightKg, initial?.proofImage, initial?.proofImageRef, initial]);
+  }, [
+    initial?.id,
+    initial?.updatedAt,
+    initial?.weightKg,
+    initial?.proofImages,
+    initial?.proofImageRefs,
+    initial?.proofImage,
+    initial?.proofImageRef,
+    initial,
+  ]);
+
+  function handleImagesChange(next: string[]) {
+    setImageRefs((prevRefs) =>
+      next.map((img, i) => {
+        if (images[i] === img && prevRefs[i]) return prevRefs[i];
+        if (img.startsWith("data:")) return undefined;
+        return prevRefs[i];
+      }),
+    );
+    setImages(next);
+  }
 
   const win = weightWindow(month, period);
   const isPending = initial?.status === "pending";
@@ -967,8 +1001,12 @@ function WeightCard({
       setError("กรอกน้ำหนัก");
       return;
     }
-    if (!image) {
+    if (images.length === 0) {
       setError("แนบภาพน้ำหนัก");
+      return;
+    }
+    if (images.some(isCompressingPreview)) {
+      setError("กำลังบีบอัดรูป กรุณารอสักครู่");
       return;
     }
     setError(undefined);
@@ -993,10 +1031,17 @@ function WeightCard({
       setSaving(false);
       return;
     }
-    if (!image) {
+    if (images.length === 0) {
       setError("แนบภาพน้ำหนัก");
       patchProgress("validate", "error", "แนบภาพน้ำหนัก");
       setProgressError("กรุณาแก้ไขข้อมูลในฟอร์มก่อนบันทึก");
+      setSaving(false);
+      return;
+    }
+    if (images.some(isCompressingPreview)) {
+      setError("กำลังบีบอัดรูป กรุณารอสักครู่");
+      patchProgress("validate", "error", "กำลังบีบอัดรูป");
+      setProgressError("กรุณารอให้บีบอัดรูปเสร็จก่อนบันทึก");
       setSaving(false);
       return;
     }
@@ -1012,8 +1057,10 @@ function WeightCard({
           month,
           period,
           weightKg: w,
-          proofImage: image,
-          proofImageRef: imageRef,
+          proofImages: images,
+          proofImageRefs: imageRefs.some(Boolean)
+            ? imageRefs.map((r) => r ?? "")
+            : undefined,
         },
         patchProgress,
         { isUpdate: isPending },
@@ -1117,17 +1164,15 @@ function WeightCard({
             <span className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">กก.</span>
           </div>
         </Field>
-        <ImageUpload
+        <ImageUploadMulti
           label={`ภาพน้ำหนัก${label}`}
           required
-          value={image}
-          onChange={(v) => {
-            setImage(v);
-            if (!v || v.startsWith("data:")) setImageRef(undefined);
-          }}
-          disabled={disabled}
+          values={images}
+          onChange={handleImagesChange}
+          max={2}
+          hint="แนบได้ 1–2 รูป"
         />
-        <Button type="button" onClick={requestSave} variant={isPending ? "outline" : "primary"} disabled={saving || disabled} className="mt-auto">
+        <Button type="button" onClick={requestSave} variant={isPending ? "outline" : "primary"} disabled={saving || disabled || images.some(isCompressingPreview)} className="mt-auto">
           {saving ? "กำลังบันทึก…" : disabled ? "ยังกรอกไม่ได้" : isPending ? "อัปเดต" : "บันทึก"}
         </Button>
       </fieldset>

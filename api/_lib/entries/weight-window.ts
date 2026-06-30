@@ -14,16 +14,25 @@ function monthKeyOffset(monthKey: string, deltaMonths: number): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
 }
 
+/** เดือนแรกของโครงการ — sync กับ MONTHLY_MISSIONS[0] ฝั่ง client */
+const CAMPAIGN_FIRST_MONTH = "2026-07";
+
 const END_WEIGHT_NEXT_MONTH_GRACE_DAYS = 2;
 
 function endWeightClosesISO(month: string): string {
   return `${monthKeyOffset(month, 1)}-${pad2(END_WEIGHT_NEXT_MONTH_GRACE_DAYS)}`;
 }
 
+const CLOSED = { open: false, canCreate: false } as const;
+
 export function weightWindow(month: string, period: "start" | "end"): {
   open: boolean;
   canCreate: boolean;
 } {
+  if (month < CAMPAIGN_FIRST_MONTH) {
+    return CLOSED;
+  }
+
   const today = todayISO();
 
   if (period === "start") {
@@ -45,6 +54,9 @@ export function weightCanCreate(month: string, period: "start" | "end"): boolean
 
 /** สร้างรายการใหม่ */
 export function assertWeightCanCreate(month: string, period: "start" | "end"): string | null {
+  if (month < CAMPAIGN_FIRST_MONTH) {
+    return "เดือนนี้อยู่นอกช่วงโครงการ";
+  }
   if (weightCanCreate(month, period)) return null;
   if (period === "start") {
     return "บันทึกน้ำหนักต้นเดือนได้เฉพาะวันที่ 1 ของเดือน";

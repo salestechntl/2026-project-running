@@ -63,18 +63,6 @@ export default function Login() {
             บันทึกการวิ่ง ติดตามน้ำหนัก และดูสถิติของทีมได้ในที่เดียว
             ร่วมสร้างสุขภาพดีไปด้วยกันตลอดปี 2026
           </p>
-          <div className="mt-8 flex gap-6">
-            {[
-              { k: "10", l: "ผู้เข้าร่วม" },
-              { k: "37.6", l: "กม. สะสมทีม" },
-              { k: "6", l: "Missions" },
-            ].map((s) => (
-              <div key={s.l}>
-                <p className="tnum text-2xl font-bold">{s.k}</p>
-                <p className="text-xs text-ink-foreground/60">{s.l}</p>
-              </div>
-            ))}
-          </div>
         </div>
 
         <p className="relative text-xs text-ink-foreground/50">
@@ -112,10 +100,13 @@ export default function Login() {
                 <IdCard className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="emp"
-                  inputMode="numeric"
+                  type="text"
                   autoFocus
                   autoComplete="username"
-                  placeholder="เช่น 80001234"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="เช่น 80001234 หรือ AS123456"
                   className="pl-11 tnum"
                   value={id}
                   onChange={(e) => {
@@ -162,6 +153,16 @@ export default function Login() {
               <Link to="/change-password" className="font-medium text-primary hover:underline">
                 เปลี่ยนรหัสผ่าน
               </Link>
+            </p>
+            <p className="text-center text-xs leading-relaxed text-muted-foreground">
+              กรณีลืมรหัสผ่านให้ส่งอีเมลมาที่{" "}
+              <a
+                href="mailto:LST-Sales-Technology@tidlor.com"
+                className="font-medium text-primary hover:underline"
+              >
+                LST-Sales-Technology@tidlor.com
+              </a>{" "}
+              เพื่อขอ Reset Password และให้ผู้ใช้งานทำการเปลี่ยนรหัสผ่าน
             </p>
           </form>
         </div>

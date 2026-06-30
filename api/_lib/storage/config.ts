@@ -4,4 +4,5 @@ export const ATTACHMENTS_BUCKET = "running-camp-attachments";
 export const SIGNED_URL_TTL = 60 * 60;
 
 export const MAX_ATTACHMENTS_PER_RUN = 5;
+export const MAX_ATTACHMENTS_PER_WEIGHT = 2;
 export const MAX_ATTACHMENT_BYTES = 6 * 1024 * 1024;

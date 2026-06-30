@@ -97,10 +97,13 @@ export default function SetPassword() {
                     <IdCard className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground" />
                     <Input
                       id="emp"
-                      inputMode="numeric"
+                      type="text"
                       autoFocus
                       autoComplete="username"
-                      placeholder="เช่น 80001234"
+                      autoCapitalize="characters"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      placeholder="เช่น 80001234 หรือ AS123456"
                       className="pl-11 tnum"
                       value={employeeId}
                       onChange={(e) => {

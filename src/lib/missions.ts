@@ -32,6 +32,9 @@ export const MONTHLY_MISSIONS: MonthlyMission[] = [
   },
 ];
 
+/** เดือนแรกของโครงการ — ไม่รับน้ำหนักย้อนหลังก่อนเดือนนี้ */
+export const CAMPAIGN_FIRST_MONTH = MONTHLY_MISSIONS[0].month;
+
 function pad2(n: number): string {
   return n.toString().padStart(2, "0");
 }
@@ -131,7 +134,8 @@ export function startWeightTargetMonth(): string {
 /**
  * เดือนเป้าหมายสำหรับน้ำหนักสิ้นเดือน
  * - วันสุดท้ายของเดือน M     → M
- * - วันที่ 1–2 ของเดือน M+1  → M (เดือนก่อนหน้า)
+ * - วันที่ 1–2 ของเดือน M+1  → M (เดือนก่อนหน้า) ถ้า M ≥ เดือนเริ่มโครงการ
+ * - วันที่ 1–2 ของเดือนเริ่มโครงการ → เดือนปัจจุบัน (ไม่ย้อนก่อนโครงการ)
  * - วันอื่นในเดือนปัจจุบัน   → เดือนปัจจุบัน (รอบถัดไปที่จะเปิดรับ)
  */
 export function endWeightTargetMonth(today = todayISOEffective()): string {
@@ -142,7 +146,10 @@ export function endWeightTargetMonth(today = todayISOEffective()): string {
   const lastDayISO = `${cur}-${pad2(lastDay)}`;
 
   if (today === lastDayISO) return cur;
-  if (day === 1 || day === 2) return monthKeyOffset(cur, -1);
+  if (day === 1 || day === 2) {
+    const prev = monthKeyOffset(cur, -1);
+    return prev >= CAMPAIGN_FIRST_MONTH ? prev : cur;
+  }
   return cur;
 }
 
@@ -205,6 +212,18 @@ export function weightWindow(month: string, period: "start" | "end"): {
   /** จำนวนวันที่ยังกรอกได้ (นับวันนี้ด้วย) ภายในช่วงผ่อนผัน */
   daysLeft: number;
 } {
+  if (month < CAMPAIGN_FIRST_MONTH) {
+    const opensISO = `${month}-01`;
+    return {
+      open: false,
+      canCreate: false,
+      opensISO,
+      closesISO: opensISO,
+      backdated: false,
+      daysLeft: 0,
+    };
+  }
+
   const [y, m] = month.split("-").map(Number);
   const lastDay = new Date(y, m, 0).getDate();
   const lastDayISO = `${month}-${pad2(lastDay)}`;

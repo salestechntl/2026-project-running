@@ -75,3 +75,12 @@ export function formatDurationThai(sec: number): string {
   const s = sec % 60;
   return `${h} ชม. ${m} นาที ${s} วินาที`;
 }
+
+/** ระยะเวลาแบบกระชับ เช่น "1:01:01" หรือ "32:40" */
+export function formatDurationCompact(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return `${h}:${pad2(m)}:${pad2(s)}`;
+  return `${m}:${pad2(s)}`;
+}

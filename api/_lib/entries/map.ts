@@ -60,7 +60,12 @@ export interface WeightEntryDto {
   month: string;
   period: WeightPeriod;
   weightKg: number;
+  proofImages?: string[];
+  /** storage paths — send back on edit to avoid re-upload (API mode) */
+  proofImageRefs?: string[];
+  /** @deprecated first image — use proofImages */
   proofImage?: string;
+  /** @deprecated first ref — use proofImageRefs */
   proofImageRef?: string;
   status: EntryStatus;
   rejectNote?: string;
@@ -96,16 +101,20 @@ export function mapRun(row: DbRunRow, images?: { urls: string[]; refs: string[] 
   };
 }
 
-export function mapWeight(row: DbWeightRow, image?: { url: string; ref: string }): WeightEntryDto {
-  const proofImage = image?.url ?? row.proof_image ?? undefined;
+export function mapWeight(row: DbWeightRow, images?: { urls: string[]; refs: string[] }): WeightEntryDto {
+  const inline = row.proof_image ? [row.proof_image] : [];
+  const urls = images?.urls.length ? images.urls : inline.length > 0 ? inline : undefined;
+  const refs = images?.refs.length ? images.refs : undefined;
   return {
     id: row.id,
     employeeId: row.employee_id,
     month: row.month,
     period: row.period,
     weightKg: Number(row.weight_kg),
-    proofImage: proofImage ?? undefined,
-    proofImageRef: image?.ref,
+    proofImages: urls,
+    proofImageRefs: refs,
+    proofImage: urls?.[0],
+    proofImageRef: refs?.[0],
     status: row.status,
     rejectNote: row.reject_note ?? undefined,
     staffEditNote: row.staff_edit_note ?? undefined,
@@ -119,9 +128,13 @@ export interface ImageSlotInput {
   ref?: string;
 }
 
-export function validateImageSlots(previews: unknown, refs?: unknown): ImageSlotInput[] | null {
+export function validateImageSlots(
+  previews: unknown,
+  refs?: unknown,
+  max = 5,
+): ImageSlotInput[] | null {
   if (!Array.isArray(previews) || previews.length === 0) return null;
-  if (previews.length > 5) return null;
+  if (previews.length > max) return null;
   const refList = Array.isArray(refs) ? refs : [];
   const slots: ImageSlotInput[] = [];
 
@@ -150,6 +163,22 @@ export function validateProofSlot(
   if (typeof ref === "string" && ref) return { preview, ref };
   if (preview.startsWith("data:image/")) return { preview };
   return null;
+}
+
+const MAX_WEIGHT_PROOF_IMAGES = 2;
+
+/** Accept proofImages[] or legacy proofImage singular. */
+export function parseWeightProofSlots(body: Record<string, unknown>): ImageSlotInput[] | null | undefined {
+  const previews = body.proofImages ?? body.proof_images;
+  const refs = body.proofImageRefs ?? body.proof_image_refs;
+  if (Array.isArray(previews)) {
+    return validateImageSlots(previews, refs, MAX_WEIGHT_PROOF_IMAGES);
+  }
+
+  const single = validateProofSlot(body.proofImage ?? body.proof_image, body.proofImageRef ?? body.proof_image_ref);
+  if (single === undefined) return undefined;
+  if (single === null) return null;
+  return [single];
 }
 
 /** @deprecated inline-only validation — local demo mode */

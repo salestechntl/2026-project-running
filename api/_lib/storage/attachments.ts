@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ATTACHMENTS_BUCKET, MAX_ATTACHMENTS_PER_RUN, SIGNED_URL_TTL } from "./config.js";
+import {
+  ATTACHMENTS_BUCKET,
+  MAX_ATTACHMENTS_PER_RUN,
+  MAX_ATTACHMENTS_PER_WEIGHT,
+  SIGNED_URL_TTL,
+} from "./config.js";
 import { isDataUrl, parseDataUrl } from "./data-url.js";
 
 export type EntryType = "run" | "weight";
@@ -223,7 +228,8 @@ export async function syncEntryAttachments(
   slots: ImageSlotInput[],
   options?: { max?: number },
 ): Promise<AttachmentView | { error: string }> {
-  const max = options?.max ?? (entryType === "run" ? MAX_ATTACHMENTS_PER_RUN : 1);
+  const max =
+    options?.max ?? (entryType === "run" ? MAX_ATTACHMENTS_PER_RUN : MAX_ATTACHMENTS_PER_WEIGHT);
   if (slots.length === 0) return { error: "ต้องแนบภาพอย่างน้อย 1 รูป" };
   if (slots.length > max) return { error: `แนบได้สูงสุด ${max} รูป` };
 
