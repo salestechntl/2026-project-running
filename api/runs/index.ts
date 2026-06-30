@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAuth } from "../_lib/auth/require.js";
 import { createAdminClient, isSupabaseConfigured } from "../_lib/supabase/admin.js";
 import { canAccessEmployee, canApproveEntries, canSelfApprove } from "../_lib/team/access.js";
-import { mapRun, validateImageSlots, type DbRunRow } from "../_lib/entries/map.js";
+import { isValidRunType, mapRun, validateImageSlots, type DbRunRow } from "../_lib/entries/map.js";
 import { mapRunDbError } from "../_lib/entries/db-error.js";
 import { attachRunImages } from "../_lib/entries/attach-run-images.js";
 import { isRunDateAllowed } from "../_lib/entries/run-date-bounds.js";
@@ -177,7 +177,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!isRunDateAllowed(date, undefined, existingRow?.run_date)) {
         return res.status(400).json({ error: "วันที่อยู่นอกช่วงที่อนุญาตให้บันทึก" });
       }
-      if (runType !== "discipline" && runType !== "mission") {
+      if (!isValidRunType(runType)) {
         return res.status(400).json({ error: "ประเภทการวิ่งไม่ถูกต้อง" });
       }
       if (!distanceKm || distanceKm <= 0) {

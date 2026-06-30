@@ -24,6 +24,8 @@ import {
   RUN_HISTORY_PAGE_SIZE,
   ENTRY_STATUS_LABEL,
   RUN_TYPE_LABEL,
+  RUN_TYPES,
+  runTypeBadgeTone,
   type RunEntry, type RunType, type WeightPeriod, type WeightEntry, type EntryStatus,
 } from "@/lib/entries";
 import { userMessageFromError, RunSavePartialError, USER_MESSAGES } from "@/lib/errors";
@@ -397,8 +399,11 @@ function RunForm({
         <div className="space-y-5">
           <Field label="ประเภทการวิ่ง" required htmlFor="runType">
             <Select id="runType" value={runType} onChange={(e) => setRunType(e.target.value as RunType)}>
-              <option value="discipline">{RUN_TYPE_LABEL.discipline}</option>
-              <option value="mission">{RUN_TYPE_LABEL.mission}</option>
+              {RUN_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {RUN_TYPE_LABEL[type]}
+                </option>
+              ))}
             </Select>
           </Field>
 
@@ -555,7 +560,7 @@ const RunHistory = forwardRef(function RunHistory(
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-semibold text-foreground">{formatThaiDate(r.date)}</span>
-                    <Badge tone={r.runType === "discipline" ? "info" : "accent"}>
+                    <Badge tone={runTypeBadgeTone(r.runType)}>
                       {r.runType === "mission" && r.missionTag
                         ? missionName(r.missionTag)
                         : RUN_TYPE_LABEL[r.runType]}

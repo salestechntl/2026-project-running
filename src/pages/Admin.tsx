@@ -9,7 +9,7 @@ import {
   setRunEntryStatus, setWeightEntryStatus,
   fetchRuns, fetchWeights,
   staffEditRunEntry, staffEditWeightEntry,
-  RUN_TYPE_LABEL, ENTRY_STATUS_LABEL,
+  RUN_TYPE_LABEL, RUN_TYPES, runTypeBadgeTone, ENTRY_STATUS_LABEL,
   type RunEntry, type WeightEntry, type EntryStatus, type RunType,
 } from "@/lib/entries";
 import { useRuns, useWeights } from "@/lib/hooks/useEntries";
@@ -906,8 +906,11 @@ function RunRow({
           </Field>
           <Field label="ประเภท">
             <Select value={runType} onChange={(e) => setRunType(e.target.value as RunType)}>
-              <option value="discipline">{RUN_TYPE_LABEL.discipline}</option>
-              <option value="mission">{RUN_TYPE_LABEL.mission}</option>
+              {RUN_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {RUN_TYPE_LABEL[type]}
+                </option>
+              ))}
             </Select>
           </Field>
           <Field label="ระยะทาง">
@@ -985,7 +988,7 @@ function RunRow({
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="whitespace-nowrap text-sm font-semibold text-foreground">{formatThaiDate(run.date)}</span>
-              <Badge tone={run.runType === "discipline" ? "info" : "accent"}>
+              <Badge tone={runTypeBadgeTone(run.runType)}>
                 {run.runType === "mission" && run.missionTag
                   ? missionName(run.missionTag)
                   : RUN_TYPE_LABEL[run.runType]}

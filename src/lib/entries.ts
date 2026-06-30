@@ -312,6 +312,8 @@ export {
   DATA_CHANGED_EVENT,
   ENTRY_STATUS_LABEL,
   RUN_TYPE_LABEL,
+  RUN_TYPES,
+  runTypeBadgeTone,
   currentMonth,
   type RunEntry,
   type WeightEntry,

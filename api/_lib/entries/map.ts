@@ -1,7 +1,12 @@
 import type { EntryStatus } from "./status.js";
 
 export type { EntryStatus };
-export type RunType = "discipline" | "mission";
+export const RUN_TYPES = ["discipline", "mission", "channel"] as const;
+export type RunType = (typeof RUN_TYPES)[number];
+
+export function isValidRunType(value: unknown): value is RunType {
+  return typeof value === "string" && (RUN_TYPES as readonly string[]).includes(value);
+}
 export type WeightPeriod = "start" | "end";
 
 export interface DbRunRow {
