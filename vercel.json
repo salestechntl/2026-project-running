@@ -10,7 +10,11 @@
   ],
   "rewrites": [
     {
-      "source": "/((?!api/|src/|@|node_modules/|assets/|favicon\\.svg|org-template\\.csv).*)",
+      "source": "/api/health",
+      "destination": "/api/auth/me?health=1"
+    },
+    {
+      "source": "/((?!api/|src/|@|node_modules/|assets/|favicon\\.svg|org-template\\.csv|coverPic\\.jpg).*)",
       "destination": "/index.html"
     }
   ]

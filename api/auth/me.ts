@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { bearerToken, verifyToken } from "../_lib/auth/jwt.js";
 import type { AuthUser, MeResponse } from "../_lib/auth/types.js";
 import { isCheckerRole, normalizeDbRole } from "../_lib/auth/roles.js";
+import { handleHealthCheck } from "../_lib/health.js";
 import { loadHomeStats } from "../_lib/home/stats.js";
 import { createAdminClient, isSupabaseConfigured } from "../_lib/supabase/admin.js";
 
@@ -12,6 +13,10 @@ function canManageTeam(isLead: boolean, role: string): boolean {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  if (req.query.health === "1") {
+    return handleHealthCheck(res);
   }
 
   const token = bearerToken(req.headers.authorization);

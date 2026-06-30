@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import type { VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 
 function resolveSupabaseConfig() {
@@ -18,7 +18,7 @@ function describeKey(key: string | undefined): string {
 }
 
 /** Safe connectivity check — no secrets in response */
-export default async function handler(_req: VercelRequest, res: VercelResponse) {
+export async function handleHealthCheck(res: VercelResponse) {
   const { url, key } = resolveSupabaseConfig();
 
   if (!url || !key) {
