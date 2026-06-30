@@ -101,6 +101,7 @@ alter table public.employees
 -- 010 — canonical uppercase employee_id (AS123456)
 -- Skip the role block below if 009 already succeeded; start at collision check.
 -- -----------------------------------------------------------------------------
+do $$
 begin
   if exists (
     select 1
