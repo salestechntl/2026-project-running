@@ -93,7 +93,3 @@ export function managerName(managerId: string | null): string | null {
 }
 
 /* ภารกิจรายเดือน (mission) ถูกย้ายไปไฟล์ src/lib/missions.ts */
-
-/** Replace with your published Tableau dashboard URL. */
-export const TABLEAU_URL =
-  "https://public.tableau.com/views/RunningCamp2026/Dashboard";
