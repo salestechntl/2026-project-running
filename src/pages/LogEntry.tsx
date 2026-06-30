@@ -26,10 +26,13 @@ import {
   RUN_TYPE_LABEL,
   type RunEntry, type RunType, type WeightPeriod, type WeightEntry, type EntryStatus,
 } from "@/lib/entries";
+import { userMessageFromError, RunSavePartialError, USER_MESSAGES } from "@/lib/errors";
+import { useOnline } from "@/lib/hooks/useOnline";
 import { useRunHistory, useWeights } from "@/lib/hooks/useEntries";
 import { pad2, formatThaiDate, formatDurationThai, formatThaiDateTime } from "@/lib/utils";
-import { Button, Card, Field, Input, Select, Badge, ConfirmDialog, LoadingBlock } from "@/components/ui";
+import { Button, Card, Field, Input, Select, Badge, ConfirmDialog } from "@/components/ui";
 import { ImageUploadMulti } from "@/components/ImageUpload";
+import { LoadStateView } from "@/components/LoadStateView";
 import { isCompressingPreview } from "@/lib/compress-image";
 import { DateSelect } from "@/components/DateSelect";
 import { cn } from "@/lib/utils";
@@ -249,9 +252,15 @@ function RunForm({
   const [progressSteps, setProgressSteps] = useState<SaveStepState[]>(initialRunSaveSteps);
   const [progressError, setProgressError] = useState<string>();
   const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
+  const [draftRunId, setDraftRunId] = useState<string | undefined>();
   const dateFieldRef = useRef<HTMLDivElement>(null);
+  const online = useOnline();
 
   const dist = parseFloat(distance) || 0;
+
+  useEffect(() => {
+    setDraftRunId(undefined);
+  }, [editing?.id]);
 
   useEffect(() => {
     if (!editing) return;
@@ -300,6 +309,10 @@ function RunForm({
   function requestSubmit(ev: React.FormEvent) {
     ev.preventDefault();
     if (!user) return;
+    if (!online) {
+      setErrors({ form: USER_MESSAGES.offline });
+      return;
+    }
 
     const validationErrors = collectValidationErrors();
     setErrors(validationErrors);
@@ -324,7 +337,7 @@ function RunForm({
     try {
       await saveRunEntryWithProgress(
         {
-          id: editing?.id,
+          id: editing?.id ?? draftRunId,
           employeeId: user.id,
           date,
           runType,
@@ -340,12 +353,16 @@ function RunForm({
         patchProgress,
       );
       window.dispatchEvent(new Event(DATA_CHANGED_EVENT));
+      setDraftRunId(undefined);
       setTimeout(() => {
         closeProgress();
         onSaved(!!editing);
       }, 1200);
     } catch (e) {
-      setProgressError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+      if (e instanceof RunSavePartialError) {
+        setDraftRunId(e.runId);
+      }
+      setProgressError(userMessageFromError(e));
     } finally {
       setSaving(false);
     }
@@ -355,6 +372,15 @@ function RunForm({
     <>
     <form onSubmit={requestSubmit} noValidate className="animate-fade-up">
       <Card className="space-y-5 p-6">
+        {draftRunId && !editing && (
+          <div
+            role="status"
+            className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs text-[hsl(32_80%_34%)]"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{USER_MESSAGES.runPartialUpload}</span>
+          </div>
+        )}
         {editing && (
           <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5">
             <span className="flex items-center gap-2 text-sm font-medium text-primary">
@@ -431,14 +457,18 @@ function RunForm({
           <Input id="note" placeholder="เช่น อากาศดี วิ่งสวนสาธารณะ" value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
 
+        {errors.form && (
+          <p className="text-sm text-danger">{errors.form}</p>
+        )}
+
         <div className="flex justify-end gap-2 pt-1">
           {editing && (
             <Button type="button" variant="outline" size="lg" onClick={onCancel}>
               ยกเลิก
             </Button>
           )}
-          <Button type="submit" size="lg" disabled={saving || images.some(isCompressingPreview)} className="w-full sm:w-auto">
-            {saving ? "กำลังบันทึก…" : editing ? "บันทึกการแก้ไข" : "บันทึกการวิ่ง"}
+          <Button type="submit" size="lg" disabled={saving || !online || images.some(isCompressingPreview)} className="w-full sm:w-auto">
+            {saving ? "กำลังบันทึก…" : !online ? "ไม่มีอินเทอร์เน็ต" : editing ? "บันทึกการแก้ไข" : "บันทึกการวิ่ง"}
           </Button>
         </div>
       </Card>
@@ -484,7 +514,7 @@ const RunHistory = forwardRef(function RunHistory(
   const canSelfManage = isLead || isChecker;
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [editLoadingId, setEditLoadingId] = useState<string | null>(null);
-  const { runs, total, page, loading, goToPage } = useRunHistory(employeeId);
+  const { runs, total, page, loading, loadSlow, loadError, refresh, goToPage } = useRunHistory(employeeId);
 
   async function handleEdit(run: RunEntry) {
     setEditLoadingId(run.id);
@@ -503,10 +533,16 @@ const RunHistory = forwardRef(function RunHistory(
       <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         ประวัติการบันทึกของฉัน
       </h2>
-      <Card className={!loading && total > 0 ? "divide-y divide-border overflow-hidden" : undefined}>
-        {loading ? (
-          <LoadingBlock compact label="กำลังโหลดประวัติ…" />
-        ) : total === 0 ? (
+      <Card className={!loading && !loadError && total > 0 ? "divide-y divide-border overflow-hidden" : undefined}>
+        <LoadStateView
+          loading={loading}
+          slow={loadSlow}
+          error={loadError}
+          onRetry={() => void refresh()}
+          label="กำลังโหลดประวัติ…"
+          compact
+        >
+        {total === 0 ? (
           <p className="p-8 text-center text-sm text-muted-foreground">ยังไม่มีการบันทึกการวิ่ง</p>
         ) : (
           <>
@@ -597,6 +633,7 @@ const RunHistory = forwardRef(function RunHistory(
             />
           </>
         )}
+        </LoadStateView>
       </Card>
 
       <ConfirmDialog
@@ -683,7 +720,7 @@ function HistoryPagination({
 
 function WeightTab({ onSaved }: { onSaved: (p: WeightPeriod) => void }) {
   const { user } = useAuth();
-  const { weights: allWeights, loading: weightsLoading, refresh } = useWeights(user?.id, undefined, { lite: true });
+  const { weights: allWeights, loading: weightsLoading, loadSlow: weightsLoadSlow, loadError: weightsLoadError, refresh } = useWeights(user?.id, undefined, { lite: true });
   const startCardRef = useRef<HTMLDivElement>(null);
   const endCardRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
@@ -793,6 +830,9 @@ function WeightTab({ onSaved }: { onSaved: (p: WeightPeriod) => void }) {
         ref={historyRef}
         weights={allWeights}
         loading={weightsLoading}
+        loadSlow={weightsLoadSlow}
+        loadError={weightsLoadError}
+        onRetry={() => void refresh()}
         onEdit={openWeightEdit}
       />
     </div>
@@ -803,10 +843,16 @@ const WeightHistory = forwardRef(function WeightHistory(
   {
     weights,
     loading,
+    loadSlow,
+    loadError,
+    onRetry,
     onEdit,
   }: {
     weights: WeightEntry[];
     loading?: boolean;
+    loadSlow?: boolean;
+    loadError?: string | null;
+    onRetry?: () => void;
     onEdit: (w: WeightEntry) => void;
   },
   ref: ForwardedRef<HTMLDivElement>,
@@ -833,10 +879,16 @@ const WeightHistory = forwardRef(function WeightHistory(
       <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         ประวัติการบันทึกของฉัน
       </h2>
-      <Card className={!loading && sorted.length > 0 ? "divide-y divide-border overflow-hidden" : undefined}>
-        {loading ? (
-          <LoadingBlock compact label="กำลังโหลดประวัติ…" />
-        ) : sorted.length === 0 ? (
+      <Card className={!loading && !loadError && sorted.length > 0 ? "divide-y divide-border overflow-hidden" : undefined}>
+        <LoadStateView
+          loading={!!loading}
+          slow={loadSlow}
+          error={loadError}
+          onRetry={onRetry}
+          label="กำลังโหลดประวัติ…"
+          compact
+        >
+        {sorted.length === 0 ? (
           <p className="p-8 text-center text-sm text-muted-foreground">ยังไม่มีการบันทึกน้ำหนัก</p>
         ) : (
           <>
@@ -900,6 +952,7 @@ const WeightHistory = forwardRef(function WeightHistory(
             />
           </>
         )}
+        </LoadStateView>
       </Card>
     </div>
   );
@@ -941,6 +994,7 @@ function WeightCard({
   const [progressSteps, setProgressSteps] = useState<SaveStepState[]>(initialWeightSaveSteps);
   const [progressError, setProgressError] = useState<string>();
   const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
+  const online = useOnline();
 
   const label = period === "start" ? "ต้นเดือน" : "สิ้นเดือน";
 
@@ -999,6 +1053,10 @@ function WeightCard({
     const w = parseFloat(weight);
     if (!w || w <= 0) {
       setError("กรอกน้ำหนัก");
+      return;
+    }
+    if (!online) {
+      setError(USER_MESSAGES.offline);
       return;
     }
     if (images.length === 0) {
@@ -1071,7 +1129,7 @@ function WeightCard({
         onSaved();
       }, 1200);
     } catch (e) {
-      setProgressError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
+      setProgressError(userMessageFromError(e));
     } finally {
       setSaving(false);
     }
@@ -1172,8 +1230,8 @@ function WeightCard({
           max={2}
           hint="แนบได้ 1–2 รูป"
         />
-        <Button type="button" onClick={requestSave} variant={isPending ? "outline" : "primary"} disabled={saving || disabled || images.some(isCompressingPreview)} className="mt-auto">
-          {saving ? "กำลังบันทึก…" : disabled ? "ยังกรอกไม่ได้" : isPending ? "อัปเดต" : "บันทึก"}
+        <Button type="button" onClick={requestSave} variant={isPending ? "outline" : "primary"} disabled={saving || disabled || !online || images.some(isCompressingPreview)} className="mt-auto">
+          {saving ? "กำลังบันทึก…" : !online ? "ไม่มีอินเทอร์เน็ต" : disabled ? "ยังกรอกไม่ได้" : isPending ? "อัปเดต" : "บันทึก"}
         </Button>
       </fieldset>
     </Card>

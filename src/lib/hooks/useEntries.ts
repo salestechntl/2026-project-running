@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { runGuardedLoad } from "../async-load";
 import { DATA_CHANGED_EVENT, fetchHomeStats, fetchRunHistory, fetchRuns, fetchWeights, RUN_HISTORY_PAGE_SIZE, type HomeStats } from "../entries";
 import type { RunEntry, WeightEntry } from "../store";
 import { holdLoading } from "./loading";
@@ -59,25 +60,42 @@ export function useHomeStats(
 ) {
   const [stats, setStats] = useState<HomeStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadSlow, setLoadSlow] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!employeeId) {
       setStats(null);
       setLoading(false);
+      setLoadSlow(false);
+      setLoadError(null);
       return;
     }
     const mgrId = managerId ?? employeeId;
     setLoading(true);
+    setLoadSlow(false);
+    setLoadError(null);
     const startedAt = Date.now();
-    try {
-      setStats(await fetchHomeStats(employeeId, { manageTeam, managerId: mgrId }));
-    } catch (e) {
-      console.error("useHomeStats:", e);
-      setStats(null);
-    } finally {
-      await holdLoading(startedAt);
-      setLoading(false);
-    }
+
+    await runGuardedLoad(
+      () => fetchHomeStats(employeeId, { manageTeam, managerId: mgrId }),
+      {
+        onSlow: () => setLoadSlow(true),
+        onSettled: (result) => {
+          if (result.ok) {
+            setStats(result.value);
+            setLoadError(null);
+          } else {
+            setStats(null);
+            setLoadError(result.message);
+          }
+          setLoading(false);
+          setLoadSlow(false);
+        },
+      },
+    );
+
+    await holdLoading(startedAt);
   }, [employeeId, manageTeam, managerId]);
 
   useEffect(() => {
@@ -90,17 +108,20 @@ export function useHomeStats(
     return () => window.removeEventListener(DATA_CHANGED_EVENT, onChange);
   }, [refresh]);
 
-  return { stats, loading, refresh };
+  return { stats, loading, loadSlow, loadError, refresh };
 }
 
 export function useRuns(employeeId: string | undefined, options?: UseEntriesOptions) {
   const listenChanges = options?.listenChanges !== false;
   const [runs, setRuns] = useState<RunEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadSlow, setLoadSlow] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     setRuns([]);
     setLoading(true);
+    setLoadError(null);
   }, [employeeId]);
 
   const refresh = useCallback(
@@ -108,22 +129,39 @@ export function useRuns(employeeId: string | undefined, options?: UseEntriesOpti
       if (!employeeId) {
         setRuns([]);
         setLoading(false);
+        setLoadError(null);
         return;
       }
       const silent = fetchOptions?.silent === true;
-      if (!silent) setLoading(true);
-      const startedAt = Date.now();
-      try {
-        setRuns(await fetchRuns(employeeId));
-      } catch (e) {
-        console.error("useRuns:", e);
-        if (!silent) setRuns([]);
-      } finally {
-        if (!silent) {
-          await holdLoading(startedAt);
-          setLoading(false);
-        }
+      if (!silent) {
+        setLoading(true);
+        setLoadSlow(false);
+        setLoadError(null);
       }
+      const startedAt = Date.now();
+
+      await runGuardedLoad(
+        () => fetchRuns(employeeId),
+        {
+          onSlow: () => {
+            if (!silent) setLoadSlow(true);
+          },
+          onSettled: (result) => {
+            if (silent) return;
+            if (result.ok) {
+              setRuns(result.value);
+              setLoadError(null);
+            } else {
+              setRuns([]);
+              setLoadError(result.message);
+            }
+            setLoading(false);
+            setLoadSlow(false);
+          },
+        },
+      );
+
+      if (!silent) await holdLoading(startedAt);
     },
     [employeeId],
   );
@@ -145,7 +183,7 @@ export function useRuns(employeeId: string | undefined, options?: UseEntriesOpti
     return () => window.removeEventListener(DATA_CHANGED_EVENT, onChange);
   }, [refresh, listenChanges]);
 
-  return { runs, loading, refresh, patchRun };
+  return { runs, loading, loadSlow, loadError, refresh, patchRun };
 }
 
 /** ประวัติการวิ่งแบบ server-side pagination — โหลดเฉพาะหน้าที่แสดง */
@@ -154,6 +192,8 @@ export function useRunHistory(employeeId: string | undefined, pageSize = RUN_HIS
   const [runs, setRuns] = useState<RunEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadSlow, setLoadSlow] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -163,29 +203,43 @@ export function useRunHistory(employeeId: string | undefined, pageSize = RUN_HIS
         setRuns([]);
         setTotal(0);
         setLoading(false);
+        setLoadError(null);
         return;
       }
       const targetPage = opts?.page ?? page;
       const silent = opts?.silent === true;
-      if (!silent) setLoading(true);
-      const startedAt = Date.now();
-      try {
-        const data = await fetchRunHistory(employeeId, targetPage, pageSize);
-        setRuns(data.runs);
-        setTotal(data.total);
-        if (data.page !== page) setPage(data.page);
-      } catch (e) {
-        console.error("useRunHistory:", e);
-        if (!silent) {
-          setRuns([]);
-          setTotal(0);
-        }
-      } finally {
-        if (!silent) {
-          await holdLoading(startedAt);
-          setLoading(false);
-        }
+      if (!silent) {
+        setLoading(true);
+        setLoadSlow(false);
+        setLoadError(null);
       }
+      const startedAt = Date.now();
+
+      await runGuardedLoad(
+        () => fetchRunHistory(employeeId, targetPage, pageSize),
+        {
+          onSlow: () => {
+            if (!silent) setLoadSlow(true);
+          },
+          onSettled: (result) => {
+            if (silent) return;
+            if (result.ok) {
+              setRuns(result.value.runs);
+              setTotal(result.value.total);
+              if (result.value.page !== page) setPage(result.value.page);
+              setLoadError(null);
+            } else {
+              setRuns([]);
+              setTotal(0);
+              setLoadError(result.message);
+            }
+            setLoading(false);
+            setLoadSlow(false);
+          },
+        },
+      );
+
+      if (!silent) await holdLoading(startedAt);
     },
     [employeeId, page, pageSize],
   );
@@ -195,6 +249,7 @@ export function useRunHistory(employeeId: string | undefined, pageSize = RUN_HIS
     setRuns([]);
     setTotal(0);
     setLoading(true);
+    setLoadError(null);
   }, [employeeId]);
 
   useEffect(() => {
@@ -219,7 +274,7 @@ export function useRunHistory(employeeId: string | undefined, pageSize = RUN_HIS
     setPage((p) => Math.min(p, totalPages));
   }, [totalPages]);
 
-  return { runs, total, page, totalPages, loading, refresh, goToPage, pageSize };
+  return { runs, total, page, totalPages, loading, loadSlow, loadError, refresh, goToPage, pageSize };
 }
 
 export function useWeights(
@@ -231,10 +286,13 @@ export function useWeights(
   const lite = options?.lite === true;
   const [weights, setWeights] = useState<WeightEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadSlow, setLoadSlow] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     setWeights([]);
     setLoading(true);
+    setLoadError(null);
   }, [employeeId, month]);
 
   const refresh = useCallback(
@@ -242,23 +300,42 @@ export function useWeights(
       if (!employeeId) {
         setWeights([]);
         setLoading(false);
+        setLoadError(null);
         return;
       }
       const silent = fetchOptions?.silent === true;
-      if (!silent) setLoading(true);
-      const startedAt = Date.now();
-      try {
-        const rows = await fetchWeights(employeeId, lite ? { lite: true } : undefined);
-        setWeights(month ? rows.filter((w) => w.month === month) : rows);
-      } catch (e) {
-        console.error("useWeights:", e);
-        if (!silent) setWeights([]);
-      } finally {
-        if (!silent) {
-          await holdLoading(startedAt);
-          setLoading(false);
-        }
+      if (!silent) {
+        setLoading(true);
+        setLoadSlow(false);
+        setLoadError(null);
       }
+      const startedAt = Date.now();
+
+      await runGuardedLoad(
+        async () => {
+          const rows = await fetchWeights(employeeId, lite ? { lite: true } : undefined);
+          return month ? rows.filter((w) => w.month === month) : rows;
+        },
+        {
+          onSlow: () => {
+            if (!silent) setLoadSlow(true);
+          },
+          onSettled: (result) => {
+            if (silent) return;
+            if (result.ok) {
+              setWeights(result.value);
+              setLoadError(null);
+            } else {
+              setWeights([]);
+              setLoadError(result.message);
+            }
+            setLoading(false);
+            setLoadSlow(false);
+          },
+        },
+      );
+
+      if (!silent) await holdLoading(startedAt);
     },
     [employeeId, month, lite],
   );
@@ -280,5 +357,5 @@ export function useWeights(
     return () => window.removeEventListener(DATA_CHANGED_EVENT, onChange);
   }, [refresh, listenChanges]);
 
-  return { weights, loading, refresh, patchWeight };
+  return { weights, loading, loadSlow, loadError, refresh, patchWeight };
 }

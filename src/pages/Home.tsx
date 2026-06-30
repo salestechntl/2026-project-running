@@ -4,14 +4,15 @@ import type { ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
 import { currentMonthKey, missionForMonth, monthLabel } from "@/lib/missions";
 import { useHomeStats } from "@/lib/hooks/useEntries";
-import { Stat, LoadingBlock, Card } from "@/components/ui";
+import { Stat } from "@/components/ui";
+import { LoadStateView } from "@/components/LoadStateView";
 import { cn } from "@/lib/utils";
 
 export default function Home() {
   const { user, isLead, isChecker, isSuperAdmin } = useAuth();
   const orgWideTeam = isChecker || isSuperAdmin;
   const manageTeam = isLead || orgWideTeam;
-  const { stats, loading: statsLoading } = useHomeStats(user?.id, manageTeam, user?.id);
+  const { stats, loading: statsLoading, loadSlow: statsLoadSlow, loadError: statsLoadError, refresh: refreshStats } = useHomeStats(user?.id, manageTeam, user?.id);
 
   if (!user) return null;
 
@@ -96,16 +97,22 @@ export default function Home() {
               <p className="text-sm font-semibold text-foreground">
                 น้ำหนักประจำเดือน · {monthLabel(weighMonth)}
               </p>
-              {statsLoading ? (
-                <div className="mt-3">
-                  <LoadingBlock compact label="กำลังโหลดข้อมูลน้ำหนัก…" />
-                </div>
-              ) : (
+              <LoadStateView
+                loading={statsLoading}
+                slow={statsLoadSlow}
+                error={statsLoadError}
+                onRetry={() => void refreshStats()}
+                label="กำลังโหลดข้อมูลน้ำหนัก…"
+                compact
+              >
+              {!statsLoading && !statsLoadError && (
               <div className="mt-2 flex flex-wrap gap-2">
                 <WeightChip label="ต้นเดือน" done={hasStart} />
                 <WeightChip label="สิ้นเดือน" done={hasEnd} />
               </div>
               )}
+              </LoadStateView>
+              {!statsLoading && !statsLoadError && (
               <ul className="mt-3 space-y-1">
                 <li className="flex items-start gap-1.5 text-xs text-muted-foreground">
                   <Calendar className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
@@ -116,6 +123,7 @@ export default function Home() {
                   กรอกน้ำหนักสิ้นเดือนได้วันสุดท้ายของเดือนและวันที่ 1–2 เดือนถัดไป
                 </li>
               </ul>
+              )}
             </div>
           </div>
           <Link
@@ -135,16 +143,18 @@ export default function Home() {
 
       {/* Personal stats */}
       <section>
-        {statsLoading ? (
-          <Card>
-            <LoadingBlock label="กำลังโหลดสถิติการวิ่ง…" />
-          </Card>
-        ) : (
+        <LoadStateView
+          loading={statsLoading}
+          slow={statsLoadSlow}
+          error={statsLoadError}
+          onRetry={() => void refreshStats()}
+          label="กำลังโหลดสถิติการวิ่ง…"
+        >
           <StatGroup title="เดือนนี้" caption={monthLabel(weighMonth)} icon={Target} tone="primary">
             <Stat label="ระยะทางสะสม" value={monthKm.toFixed(1)} unit="กม." />
             <Stat label="จำนวนครั้งที่วิ่ง" value={String(monthRunCount)} unit="ครั้ง" />
           </StatGroup>
-        )}
+        </LoadStateView>
       </section>
 
       {/* Menu */}

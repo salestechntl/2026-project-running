@@ -1,7 +1,6 @@
 import { getAuthMode } from "./auth-config";
-import {
-  isCompressingPreview,
-} from "./compress-image";
+import { isCompressingPreview } from "./compress-image";
+import { assertOnline, userMessageFromError } from "./errors";
 import { apiSaveWeight } from "./api";
 import {
   SaveWeightStepError,
@@ -57,7 +56,7 @@ async function runStep<T>(
     onProgress(stepId, "done", detail);
     return result;
   } catch (e) {
-    const message = e instanceof Error ? e.message : "ดำเนินการไม่สำเร็จ";
+    const message = userMessageFromError(e);
     onProgress(stepId, "error", message);
     throw e instanceof SaveWeightStepError ? e : new SaveWeightStepError(stepId, message);
   }
@@ -68,13 +67,15 @@ export async function saveWeightEntryWithProgress(
   onProgress: WeightSaveProgressUpdater,
   opts?: { isUpdate?: boolean },
 ): Promise<WeightEntry> {
+  assertOnline();
+
   onProgress("image", "running");
   let imageInfo: ReturnType<typeof prepareImages>;
   try {
     imageInfo = prepareImages(entry.proofImages, entry.proofImageRefs);
     onProgress("image", "done", imageInfo.detail);
   } catch (e) {
-    const message = e instanceof Error ? e.message : "เตรียมรูปภาพไม่สำเร็จ";
+    const message = userMessageFromError(e, "เตรียมรูปภาพไม่สำเร็จ");
     onProgress("image", "error", message);
     throw e instanceof SaveWeightStepError ? e : new SaveWeightStepError("image", message);
   }

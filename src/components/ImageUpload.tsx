@@ -7,6 +7,7 @@ import {
   maxSideForSlotBudget,
   targetBytesPerImage,
 } from "@/lib/compress-image";
+import { userMessageFromError } from "@/lib/errors";
 
 interface Props {
   label: string;
@@ -34,7 +35,7 @@ export function ImageUpload({ label, required, value, onChange, hint, disabled }
         maxSide: maxSideForSlotBudget(1),
       }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "อัปโหลดไม่สำเร็จ");
+      setError(userMessageFromError(e, "อัปโหลดไม่สำเร็จ"));
     } finally {
       setCompressing(false);
     }
@@ -230,7 +231,7 @@ export function ImageUploadMulti({ label, required, values, onChange, max = 5, h
         replaceBlob(blobUrl, dataUrl);
       } catch (e) {
         dropBlob(blobUrl);
-        setError(e instanceof Error ? e.message : "อัปโหลดไม่สำเร็จ");
+        setError(userMessageFromError(e, "อัปโหลดไม่สำเร็จ"));
       } finally {
         setCompressingCount((c) => Math.max(0, c - 1));
       }

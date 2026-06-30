@@ -1,6 +1,7 @@
 import { getAuthMode } from "./auth-config";
 import { isCompressingPreview } from "./compress-image";
-import { apiDeleteRun, apiSaveRunRecord, apiUploadRunImages } from "./api";
+import { assertOnline, RunSavePartialError, userMessageFromError } from "./errors";
+import { apiSaveRunRecord, apiUploadRunImages } from "./api";
 import {
   SaveRunStepError,
   type RunSaveStepId,
@@ -50,7 +51,7 @@ async function runStep<T>(
     onProgress(stepId, "done", detail);
     return result;
   } catch (e) {
-    const message = e instanceof Error ? e.message : "ดำเนินการไม่สำเร็จ";
+    const message = userMessageFromError(e);
     onProgress(stepId, "error", message);
     throw e instanceof SaveRunStepError ? e : new SaveRunStepError(stepId, message);
   }
@@ -60,13 +61,15 @@ export async function saveRunEntryWithProgress(
   entry: RunSaveInput,
   onProgress: SaveProgressUpdater,
 ): Promise<RunEntry> {
+  assertOnline();
+
   onProgress("images", "running");
   let imageInfo: ReturnType<typeof prepareImages>;
   try {
     imageInfo = prepareImages(entry.stravaImages, entry.stravaImageRefs);
     onProgress("images", "done", imageInfo.detail);
   } catch (e) {
-    const message = e instanceof Error ? e.message : "เตรียมรูปภาพไม่สำเร็จ";
+    const message = userMessageFromError(e, "เตรียมรูปภาพไม่สำเร็จ");
     onProgress("images", "error", message);
     throw e instanceof SaveRunStepError ? e : new SaveRunStepError("images", message);
   }
@@ -83,12 +86,12 @@ export async function saveRunEntryWithProgress(
     return run;
   }
 
-  const isNew = !entry.id;
   let runId = entry.id;
 
-  await runStep("record", onProgress, isNew ? "สร้างรายการใหม่" : "อัปเดตรายการเดิม", async () => {
+  await runStep("record", onProgress, runId ? "อัปเดตรายการเดิม" : "สร้างรายการใหม่", async () => {
     const run = await apiSaveRunRecord({
       ...entry,
+      id: runId,
       stravaImages: [],
       stravaImageRefs: undefined,
     });
@@ -107,12 +110,8 @@ export async function saveRunEntryWithProgress(
     onProgress("complete", "done", "บันทึกเรียบร้อย");
     return final;
   } catch (e) {
-    if (isNew && runId) {
-      try {
-        await apiDeleteRun(runId);
-      } catch {
-        /* best effort rollback */
-      }
+    if (runId) {
+      throw new RunSavePartialError(runId);
     }
     throw e;
   }

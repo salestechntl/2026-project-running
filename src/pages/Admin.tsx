@@ -16,12 +16,24 @@ import { useRuns, useWeights } from "@/lib/hooks/useEntries";
 import { useSubordinates } from "@/lib/hooks/useTeam";
 import { formatThaiDate, formatThaiDateTime, formatDurationThai, formatDurationCompact, matchesEmployeeSearch } from "@/lib/utils";
 import { Card, Badge, Button, LoadingBlock, Field, Input, Select, ConfirmDialog, RejectReasonDialog, AlertDialog } from "@/components/ui";
+import { DecimalInput } from "@/components/DecimalInput";
 import { DateSelect } from "@/components/DateSelect";
+import { formatFixedDecimals, parseDecimalValue } from "@/lib/decimal-input";
 import { cn } from "@/lib/utils";
 import { validateStaffEditNote, defaultStaffEditTargetStatus, type StaffEditTargetStatus } from "@/lib/staff-edit-note";
 
 const staffEditNoteAreaClass =
   "min-h-[4.5rem] w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-[15px] text-foreground shadow-xs transition-colors placeholder:text-muted-foreground/70 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground";
+
+const STAFF_RUN_DISTANCE_MAX = 99.99;
+
+function validateStaffRunDistance(value: string): string | null {
+  const n = parseDecimalValue(value);
+  if (n === null) return "กรุณากรอกระยะทาง";
+  if (n <= 0) return "ระยะทางต้องมากกว่า 0";
+  if (n > STAFF_RUN_DISTANCE_MAX) return `ระยะทางต้องไม่เกิน ${STAFF_RUN_DISTANCE_MAX.toFixed(2)} กม.`;
+  return null;
+}
 
 type WorkStatusFilter = "all" | EntryStatus;
 
@@ -799,7 +811,7 @@ function RunRow({
   const bounds = useMemo(() => staffRunDateBounds(), []);
   const [date, setDate] = useState(run.date);
   const [runType, setRunType] = useState<RunType>(run.runType);
-  const [distanceKm, setDistanceKm] = useState(String(run.distanceKm));
+  const [distanceKm, setDistanceKm] = useState(formatFixedDecimals(String(run.distanceKm), 2));
   const [h, setH] = useState(String(Math.floor(run.durationSec / 3600)));
   const [m, setM] = useState(String(Math.floor((run.durationSec % 3600) / 60)));
   const [s, setS] = useState(String(run.durationSec % 60));
@@ -819,7 +831,7 @@ function RunRow({
     if (!editing) return;
     setDate(run.date);
     setRunType(run.runType);
-    setDistanceKm(String(run.distanceKm));
+    setDistanceKm(formatFixedDecimals(String(run.distanceKm), 2));
     setH(String(Math.floor(run.durationSec / 3600)));
     setM(String(Math.floor((run.durationSec % 3600) / 60)));
     setS(String(run.durationSec % 60));
@@ -844,10 +856,10 @@ function RunRow({
   }
 
   function saveEdit() {
-    const dist = Number(distanceKm);
+    const distanceErr = validateStaffRunDistance(distanceKm);
     const durationSec = (Number(h) || 0) * 3600 + (Number(m) || 0) * 60 + (Number(s) || 0);
-    if (!dist || dist <= 0) {
-      showAlert("ระยะทางต้องมากกว่า 0");
+    if (distanceErr) {
+      showAlert(distanceErr);
       return;
     }
     if (!durationSec || durationSec <= 0) {
@@ -867,7 +879,7 @@ function RunRow({
   }
 
   async function performSave() {
-    const dist = Number(distanceKm);
+    const dist = parseDecimalValue(formatFixedDecimals(distanceKm, 2))!;
     const durationSec = (Number(h) || 0) * 3600 + (Number(m) || 0) * 60 + (Number(s) || 0);
     setConfirmSaveOpen(false);
     await act(async () => {
@@ -898,14 +910,14 @@ function RunRow({
               <option value="mission">{RUN_TYPE_LABEL.mission}</option>
             </Select>
           </Field>
-          <Field label="ระยะทาง (กม.)">
-            <Input
-              type="number"
-              step="0.01"
-              min="0"
+          <Field label="ระยะทาง">
+            <DecimalInput
               value={distanceKm}
-              onChange={(e) => setDistanceKm(e.target.value)}
-              className="tnum"
+              onChange={setDistanceKm}
+              max={STAFF_RUN_DISTANCE_MAX}
+              decimals={2}
+              placeholder="5.00"
+              disabled={busy}
             />
           </Field>
           <Field label="เวลา (ชม. : นาที : วินาที)">

@@ -7,6 +7,7 @@ import { useSubordinates } from "@/lib/hooks/useTeam";
 import { useRejectedEntryCount } from "@/lib/hooks/useEntries";
 import { AppShell, type NavItem } from "@/components/AppShell";
 import { SimulatedDateBanner } from "@/components/SimulatedDateBanner";
+import { OfflineBanner } from "@/components/OfflineBanner";
 import Login from "@/pages/Login";
 import SetPassword from "@/pages/SetPassword";
 import ChangePassword from "@/pages/ChangePassword";
@@ -114,6 +115,7 @@ export default function App() {
   return (
     <AuthProvider>
       <SimulatedDateBanner />
+      <OfflineBanner />
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/set-password" element={<SetPassword />} />
