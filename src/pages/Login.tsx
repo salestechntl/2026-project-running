@@ -39,9 +39,9 @@ export default function Login() {
 
   return (
     <div className="relative min-h-screen bg-background">
-      <div className="grid min-h-screen pb-12 lg:grid-cols-[1.05fr_1fr] lg:pb-14">
+      <div className="grid min-h-screen pb-12 lg:h-screen lg:grid-cols-[1.05fr_1fr] lg:pb-0">
       {/* Brand panel */}
-      <div className="relative hidden flex-col justify-between overflow-hidden p-10 text-ink-foreground lg:flex">
+      <div className="login-brand-panel relative hidden h-full min-h-screen flex-col justify-between overflow-hidden p-10 text-ink-foreground lg:flex">
         <img
           src="/coverPic.jpg"
           alt=""
@@ -62,11 +62,11 @@ export default function Login() {
           </div>
         </div>
 
-        <div className="relative max-w-md">
-          <h1 className="font-display text-4xl font-extrabold leading-[1.1] tracking-tight">
+        <div className="relative ml-auto w-full max-w-[92%] text-right lg:max-w-[min(42rem,92%)]">
+          <h1 className="login-hero-title font-display font-extrabold tracking-tight">
             ทุกก้าว นับเป็นความสำเร็จ
           </h1>
-          <p className="mt-4 text-[15px] leading-relaxed text-ink-foreground/70">
+          <p className="login-hero-lead leading-relaxed text-ink-foreground/70">
             บันทึกการวิ่ง ติดตามน้ำหนัก และดูสถิติของทีมได้ในที่เดียว
             ร่วมสร้างสุขภาพดีไปด้วยกันตลอดปี 2026
           </p>
@@ -176,7 +176,7 @@ export default function Login() {
       </div>
       </div>
 
-      <footer className="fixed inset-x-0 bottom-0 z-10 border-t border-border/80 bg-background/95 px-4 py-2.5 text-center text-xs tabular-nums text-muted-foreground backdrop-blur-sm">
+      <footer className="fixed inset-x-0 bottom-0 z-10 border-t border-border/80 bg-background/95 px-4 py-2.5 text-center text-xs tabular-nums text-muted-foreground backdrop-blur-sm lg:hidden">
         Version {APP_VERSION}
       </footer>
     </div>
